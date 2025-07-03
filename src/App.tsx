@@ -17,7 +17,7 @@ import { AppMode, ViewMode, InterviewConfig, Question, UserAnswer, EvaluationRes
 type AppState = 'mode-selection' | 'config' | 'questions' | 'results' | 'auth' | 'invite' | 'candidate';
 
 function App() {
-  const { user, login, register, logout, loading: authLoading } = useAuth();
+  const { user, login, register, logout, loading: authLoading, updateProfile, getAllUsers } = useAuth();
   const { generateQuestions, evaluateAnswers, loading: llmLoading } = useLLM();
   
   const [appState, setAppState] = useState<AppState>('mode-selection');
@@ -237,6 +237,8 @@ function App() {
         onHome={handleHome}
         showHomeButton={showHomeButton}
         onShowAuth={handleShowAuth}
+        onUpdateProfile={updateProfile}
+        onGetAllUsers={getAllUsers}
       />
       
       {/* View Mode Toggle - Hide for candidate view */}
@@ -322,7 +324,7 @@ function App() {
                 </p>
                 {user && (
                   <div className="mt-4 inline-flex items-center px-4 py-2 bg-green-100 text-green-800 rounded-full text-sm font-medium">
-                    Welcome back, {user.name}! You now have access to all features including evaluation mode.
+                    Welcome back, {user.name || user.email}! You now have access to all features including evaluation mode.
                   </div>
                 )}
               </div>

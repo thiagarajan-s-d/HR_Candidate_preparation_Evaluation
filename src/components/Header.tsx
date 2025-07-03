@@ -10,6 +10,8 @@ interface HeaderProps {
   onHome?: () => void;
   showHomeButton?: boolean;
   onShowAuth?: () => void;
+  onUpdateProfile?: (updates: { name?: string; email?: string }) => Promise<boolean>;
+  onGetAllUsers?: () => Promise<UserType[]>;
 }
 
 export const Header: React.FC<HeaderProps> = ({ 
@@ -17,7 +19,9 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout, 
   onHome, 
   showHomeButton = false,
-  onShowAuth 
+  onShowAuth,
+  onUpdateProfile,
+  onGetAllUsers
 }) => {
   const [showProfile, setShowProfile] = useState(false);
 
@@ -85,7 +89,9 @@ export const Header: React.FC<HeaderProps> = ({
         {showProfile && user && (
           <UserProfile 
             user={user} 
-            onClose={() => setShowProfile(false)} 
+            onClose={() => setShowProfile(false)}
+            onUpdateProfile={onUpdateProfile}
+            onGetAllUsers={onGetAllUsers}
           />
         )}
       </AnimatePresence>

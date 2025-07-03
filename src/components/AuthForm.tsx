@@ -3,8 +3,8 @@ import { motion } from 'framer-motion';
 import { Mail, Lock, Eye, EyeOff, User, UserPlus, LogIn, AlertCircle } from 'lucide-react';
 
 interface AuthFormProps {
-  onLogin: (email: string, password: string) => Promise<boolean>;
-  onRegister: (email: string, password: string, name: string) => Promise<boolean>;
+  onLogin: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  onRegister: (email: string, password: string, name: string) => Promise<{ success: boolean; error?: string }>;
   loading: boolean;
 }
 
@@ -59,15 +59,15 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onLogin, onRegister, loading
     try {
       console.log(`Attempting ${isLogin ? 'login' : 'registration'} for:`, email);
       
-      const success = isLogin 
+      const result = isLogin 
         ? await onLogin(email, password)
         : await onRegister(email, password, name);
       
-      if (!success) {
-        setError(isLogin 
-          ? 'Invalid email or password. Please check your credentials and try again.'
-          : 'Registration failed. Please check your details and try again.'
-        );
+      if (!result.success) {
+        setError(result.error || (isLogin 
+          ? 'Login failed. Please try again.'
+          : 'Registration failed. Please try again.'
+        ));
       } else {
         console.log(`${isLogin ? 'Login' : 'Registration'} successful!`);
         // Clear form on success

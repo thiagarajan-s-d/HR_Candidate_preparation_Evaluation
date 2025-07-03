@@ -154,10 +154,10 @@ export const useAuth = () => {
     }
   };
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     if (!email.trim() || !password.trim()) {
       console.log('Login failed: empty email or password');
-      return false;
+      return { success: false, error: 'Email and password are required.' };
     }
 
     try {
@@ -170,31 +170,31 @@ export const useAuth = () => {
 
       if (error) {
         console.error('Login error:', error.message);
-        return false;
+        return { success: false, error: error.message };
       }
 
       if (data.user && data.session) {
         console.log('Login successful for:', data.user.email);
         // Profile will be loaded by the auth state change listener
-        return true;
+        return { success: true };
       }
 
-      return false;
+      return { success: false, error: 'Login failed. Please try again.' };
     } catch (error) {
       console.error('Login error:', error);
-      return false;
+      return { success: false, error: 'An unexpected error occurred. Please try again.' };
     }
   };
 
-  const register = async (email: string, password: string, name: string): Promise<boolean> => {
+  const register = async (email: string, password: string, name: string): Promise<{ success: boolean; error?: string }> => {
     if (!email.trim() || !password.trim() || !name.trim()) {
       console.log('Registration failed: missing required fields');
-      return false;
+      return { success: false, error: 'All fields are required.' };
     }
 
     if (password.length < 6) {
       console.log('Registration failed: password too short');
-      return false;
+      return { success: false, error: 'Password must be at least 6 characters long.' };
     }
 
     try {
@@ -212,20 +212,20 @@ export const useAuth = () => {
 
       if (error) {
         console.error('Registration error:', error.message);
-        return false;
+        return { success: false, error: error.message };
       }
 
       if (data.user) {
         console.log('Registration successful for:', data.user.email);
         
         // If user is immediately confirmed, profile will be created by trigger or auth listener
-        return true;
+        return { success: true };
       }
 
-      return false;
+      return { success: false, error: 'Registration failed. Please try again.' };
     } catch (error) {
       console.error('Registration error:', error);
-      return false;
+      return { success: false, error: 'An unexpected error occurred. Please try again.' };
     }
   };
 

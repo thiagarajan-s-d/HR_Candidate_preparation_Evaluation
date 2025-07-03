@@ -8,10 +8,14 @@ export const useAuth = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let mounted = true;
+
     // Get initial session
     const getInitialSession = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (!mounted) return;
         
         if (error) {
           console.error('Error getting session:', error);
@@ -24,11 +28,11 @@ export const useAuth = () => {
           await loadUserProfile(session.user);
         } else {
           console.log('No existing session found');
+          setLoading(false);
         }
       } catch (error) {
         console.error('Error in getInitialSession:', error);
-      } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     };
 
@@ -36,6 +40,8 @@ export const useAuth = () => {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+      
       console.log('Auth state changed:', event, session?.user?.email);
       
       if (event === 'SIGNED_IN' && session?.user) {
@@ -44,16 +50,25 @@ export const useAuth = () => {
       } else if (event === 'SIGNED_OUT') {
         console.log('User signed out');
         setUser(null);
+        setLoading(false);
       } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-        console.log('Token refreshed, ensuring profile is loaded...');
-        await loadUserProfile(session.user);
+        console.log('Token refreshed');
+        // Don't reload profile on token refresh if we already have user data
+        if (!user) {
+          await loadUserProfile(session.user);
+        } else {
+          setLoading(false);
+        }
+      } else {
+        setLoading(false);
       }
-      
-      setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []); // Remove user dependency to prevent infinite loops
 
   const loadUserProfile = async (supabaseUser: SupabaseUser) => {
     try {
@@ -75,6 +90,9 @@ export const useAuth = () => {
           await createUserProfile(supabaseUser);
           return;
         }
+        
+        // For other errors, still set loading to false
+        setLoading(false);
         return;
       }
 
@@ -87,8 +105,11 @@ export const useAuth = () => {
         setUser(user);
         console.log('User profile loaded successfully:', user);
       }
+      
+      setLoading(false);
     } catch (error) {
       console.error('Error in loadUserProfile:', error);
+      setLoading(false);
     }
   };
 
@@ -112,6 +133,7 @@ export const useAuth = () => {
 
       if (error) {
         console.error('Error creating profile:', error);
+        setLoading(false);
         return;
       }
 
@@ -124,8 +146,11 @@ export const useAuth = () => {
         setUser(user);
         console.log('User profile created successfully:', user);
       }
+      
+      setLoading(false);
     } catch (error) {
       console.error('Error in createUserProfile:', error);
+      setLoading(false);
     }
   };
 
@@ -135,7 +160,6 @@ export const useAuth = () => {
       return false;
     }
 
-    setLoading(true);
     try {
       console.log('Attempting login for:', email);
       
@@ -146,7 +170,6 @@ export const useAuth = () => {
 
       if (error) {
         console.error('Login error:', error.message);
-        setLoading(false);
         return false;
       }
 
@@ -156,11 +179,9 @@ export const useAuth = () => {
         return true;
       }
 
-      setLoading(false);
       return false;
     } catch (error) {
       console.error('Login error:', error);
-      setLoading(false);
       return false;
     }
   };
@@ -176,7 +197,6 @@ export const useAuth = () => {
       return false;
     }
 
-    setLoading(true);
     try {
       console.log('Attempting registration for:', email);
       
@@ -192,34 +212,25 @@ export const useAuth = () => {
 
       if (error) {
         console.error('Registration error:', error.message);
-        setLoading(false);
         return false;
       }
 
       if (data.user) {
         console.log('Registration successful for:', data.user.email);
         
-        // If user is immediately confirmed, create profile
-        if (data.user.email_confirmed_at) {
-          await loadUserProfile(data.user);
-        }
-        
-        setLoading(false);
+        // If user is immediately confirmed, profile will be created by trigger or auth listener
         return true;
       }
 
-      setLoading(false);
       return false;
     } catch (error) {
       console.error('Registration error:', error);
-      setLoading(false);
       return false;
     }
   };
 
   const logout = async () => {
     console.log('Logging out user');
-    setLoading(true);
     
     try {
       const { error } = await supabase.auth.signOut();

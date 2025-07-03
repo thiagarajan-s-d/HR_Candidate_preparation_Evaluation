@@ -48,18 +48,20 @@ export const useLLM = () => {
       4. An explanation of what the question tests
       5. Relevant learning resources (as URLs)
       
-      Return ONLY a valid JSON array with this exact structure:
-      [
-        {
-          "question": "question text",
-          "type": "question-type",
-          "category": "skill category",
-          "difficulty": "${config.proficiencyLevel}",
-          "answer": "sample answer",
-          "explanation": "explanation text",
-          "links": ["url1", "url2"]
-        }
-      ]`;
+      Return ONLY a valid JSON object with this exact structure:
+      {
+        "questions": [
+          {
+            "question": "question text",
+            "type": "question-type",
+            "category": "skill category",
+            "difficulty": "${config.proficiencyLevel}",
+            "answer": "sample answer",
+            "explanation": "explanation text",
+            "links": ["url1", "url2"]
+          }
+        ]
+      }`;
 
       const completion = await groq.chat.completions.create({
         messages: [

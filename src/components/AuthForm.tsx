@@ -66,11 +66,15 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onLogin, onRegister, loading
       if (!success) {
         setError(isLogin 
           ? 'Invalid email or password. Please check your credentials and try again.'
-          : 'Registration failed. This email may already be registered.'
+          : 'Registration failed. Please check your details and try again.'
         );
       } else {
         console.log(`${isLogin ? 'Login' : 'Registration'} successful!`);
-        // Form will be closed by parent component when user state changes
+        // Clear form on success
+        setEmail('');
+        setPassword('');
+        setName('');
+        setError('');
       }
     } catch (error) {
       console.error('Auth error:', error);
@@ -234,8 +238,8 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onLogin, onRegister, loading
       </div>
 
       <div className="mt-4 text-center text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
-        <p><strong>Demo:</strong> Create an account with any email and a 6+ character password</p>
-        <p>Your data will be stored locally in your browser</p>
+        <p><strong>Supabase Integration:</strong> Your data is securely stored with proper authentication</p>
+        <p>Create an account with any email and a 6+ character password</p>
       </div>
     </motion.div>
   );

@@ -10,11 +10,26 @@ export const useAuth = () => {
   useEffect(() => {
     // Get initial session
     const getInitialSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        await loadUserProfile(session.user);
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Error getting session:', error);
+          setLoading(false);
+          return;
+        }
+
+        if (session?.user) {
+          console.log('Found existing session for:', session.user.email);
+          await loadUserProfile(session.user);
+        } else {
+          console.log('No existing session found');
+        }
+      } catch (error) {
+        console.error('Error in getInitialSession:', error);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     getInitialSession();
@@ -23,11 +38,17 @@ export const useAuth = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state changed:', event, session?.user?.email);
       
-      if (session?.user) {
+      if (event === 'SIGNED_IN' && session?.user) {
+        console.log('User signed in, loading profile...');
         await loadUserProfile(session.user);
-      } else {
+      } else if (event === 'SIGNED_OUT') {
+        console.log('User signed out');
         setUser(null);
+      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+        console.log('Token refreshed, ensuring profile is loaded...');
+        await loadUserProfile(session.user);
       }
+      
       setLoading(false);
     });
 
@@ -36,6 +57,9 @@ export const useAuth = () => {
 
   const loadUserProfile = async (supabaseUser: SupabaseUser) => {
     try {
+      console.log('Loading profile for user:', supabaseUser.id);
+      
+      // First, check if profile exists
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
@@ -44,6 +68,13 @@ export const useAuth = () => {
 
       if (error) {
         console.error('Error loading profile:', error);
+        
+        // If profile doesn't exist, create it
+        if (error.code === 'PGRST116') {
+          console.log('Profile not found, creating new profile...');
+          await createUserProfile(supabaseUser);
+          return;
+        }
         return;
       }
 
@@ -54,10 +85,47 @@ export const useAuth = () => {
           name: profile.name || undefined
         };
         setUser(user);
-        console.log('User profile loaded:', user);
+        console.log('User profile loaded successfully:', user);
       }
     } catch (error) {
       console.error('Error in loadUserProfile:', error);
+    }
+  };
+
+  const createUserProfile = async (supabaseUser: SupabaseUser) => {
+    try {
+      console.log('Creating profile for user:', supabaseUser.id);
+      
+      const profileData = {
+        id: supabaseUser.id,
+        email: supabaseUser.email!,
+        name: supabaseUser.user_metadata?.name || '',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .insert(profileData)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating profile:', error);
+        return;
+      }
+
+      if (profile) {
+        const user: User = {
+          id: profile.id,
+          email: profile.email,
+          name: profile.name || undefined
+        };
+        setUser(user);
+        console.log('User profile created successfully:', user);
+      }
+    } catch (error) {
+      console.error('Error in createUserProfile:', error);
     }
   };
 
@@ -82,10 +150,9 @@ export const useAuth = () => {
         return false;
       }
 
-      if (data.user) {
+      if (data.user && data.session) {
         console.log('Login successful for:', data.user.email);
-        // User profile will be loaded by the auth state change listener
-        setLoading(false);
+        // Profile will be loaded by the auth state change listener
         return true;
       }
 
@@ -131,7 +198,12 @@ export const useAuth = () => {
 
       if (data.user) {
         console.log('Registration successful for:', data.user.email);
-        // User profile will be created by the database trigger and loaded by auth state change listener
+        
+        // If user is immediately confirmed, create profile
+        if (data.user.email_confirmed_at) {
+          await loadUserProfile(data.user);
+        }
+        
         setLoading(false);
         return true;
       }
@@ -168,7 +240,10 @@ export const useAuth = () => {
     try {
       const { error } = await supabase
         .from('profiles')
-        .update(updates)
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', user.id);
 
       if (error) {

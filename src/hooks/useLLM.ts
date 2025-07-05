@@ -29,52 +29,69 @@ export const useLLM = () => {
     setLoading(true);
     
     try {
+      console.log('Starting question generation with config:', config);
+      
+      // Create a more detailed prompt that ensures unique questions
       const questionTypesDescription = config.questionTypes
         .map(type => `${type}: ${getQuestionTypeDescription(type)}`)
         .join(', ');
 
-      const prompt = `Generate exactly ${config.numberOfQuestions} UNIQUE and DIFFERENT interview questions for a ${config.role} position at ${config.company}. 
-      Focus on these skills: ${config.skills.join(', ')}. 
-      Proficiency level: ${config.proficiencyLevel}.
+      // Calculate distribution of questions across types
+      const questionsPerType = Math.floor(config.numberOfQuestions / config.questionTypes.length);
+      const remainingQuestions = config.numberOfQuestions % config.questionTypes.length;
       
-      Question types to include: ${questionTypesDescription}
-      
-      IMPORTANT: 
-      - Each question must be completely different and unique. Do not repeat or rephrase the same question.
-      - For coding questions, provide properly formatted code with correct indentation and line breaks
-      - For technical answers, use proper formatting with bullet points, code blocks, and clear structure
-      - Use \\n for line breaks and proper spacing in answers
-      
-      Distribute questions evenly across the selected question types: ${config.questionTypes.join(', ')}.
-      
-      For each question, provide:
-      1. A unique question text (no duplicates)
-      2. The question type (one of: ${config.questionTypes.join(', ')})
-      3. A comprehensive, well-formatted sample answer with proper indentation for code
-      4. An explanation of what the question tests
-      5. Relevant learning resources (as URLs)
-      
-      For coding questions, format answers like this example:
-      "Here's a solution:\\n\\n\`\`\`javascript\\nfunction findMax(arr) {\\n  if (arr.length === 0) return -1;\\n  \\n  let maxValue = arr[0];\\n  let maxIndex = 0;\\n  \\n  for (let i = 1; i < arr.length; i++) {\\n    if (arr[i] > maxValue) {\\n      maxValue = arr[i];\\n      maxIndex = i;\\n    }\\n  }\\n  \\n  return maxIndex;\\n}\\n\`\`\`\\n\\nTime Complexity: O(n)\\nSpace Complexity: O(1)"
-      
-      Return ONLY a valid JSON array with exactly ${config.numberOfQuestions} question objects:
-      [
-        {
-          "question": "unique question text 1",
-          "type": "question-type",
-          "category": "skill category",
-          "difficulty": "${config.proficiencyLevel}",
-          "answer": "comprehensive, well-formatted sample answer with proper line breaks and indentation",
-          "explanation": "detailed explanation text",
-          "links": ["https://example.com/resource1", "https://example.com/resource2"]
-        }
-      ]`;
+      const typeDistribution = config.questionTypes.map((type, index) => ({
+        type,
+        count: questionsPerType + (index < remainingQuestions ? 1 : 0)
+      }));
+
+      console.log('Question type distribution:', typeDistribution);
+
+      const prompt = `You are generating interview questions for a ${config.role} position at ${config.company}.
+
+REQUIREMENTS:
+- Generate exactly ${config.numberOfQuestions} COMPLETELY DIFFERENT and UNIQUE questions
+- Each question must be distinct and cover different aspects
+- No two questions should be similar or test the same concept
+- Proficiency level: ${config.proficiencyLevel}
+- Skills focus: ${config.skills.join(', ')}
+
+QUESTION DISTRIBUTION:
+${typeDistribution.map(td => `- ${td.type}: ${td.count} questions (${getQuestionTypeDescription(td.type)})`).join('\n')}
+
+FORMATTING REQUIREMENTS:
+- For coding questions: Include properly formatted code with \\n for line breaks
+- Use markdown formatting: **bold**, \`code\`, bullet points with •
+- Structure answers with clear sections and proper spacing
+
+QUESTION VARIETY EXAMPLES:
+For technical-coding: array manipulation, string processing, tree traversal, dynamic programming, sorting algorithms
+For system-design: database design, API architecture, caching strategies, microservices, load balancing
+For behavioral: conflict resolution, leadership, project management, learning experiences, teamwork
+For technical-concepts: OOP principles, design patterns, data structures, algorithms complexity, best practices
+
+Generate exactly ${config.numberOfQuestions} questions following this distribution. Each question must be completely unique.
+
+Return a JSON array with this exact structure:
+[
+  {
+    "question": "unique question text",
+    "type": "question-type",
+    "category": "skill category", 
+    "difficulty": "${config.proficiencyLevel}",
+    "answer": "comprehensive formatted answer with proper \\n line breaks",
+    "explanation": "what this question tests",
+    "links": ["url1", "url2"]
+  }
+]`;
+
+      console.log('Sending prompt to Groq API...');
 
       const completion = await groq.chat.completions.create({
         messages: [
           {
             role: "system",
-            content: "You are an expert technical interviewer. Generate high-quality, UNIQUE interview questions with comprehensive, properly formatted answers. For coding questions, always include properly indented code with line breaks. Use \\n for line breaks in JSON strings. Each question must be completely different from the others. You must respond with a valid JSON array only, no additional text or explanations."
+            content: "You are an expert technical interviewer. Generate UNIQUE, DIVERSE interview questions. Each question must be completely different from the others. Use proper formatting with \\n for line breaks in JSON strings. Return only a valid JSON array, no additional text."
           },
           {
             role: "user",
@@ -82,8 +99,8 @@ export const useLLM = () => {
           }
         ],
         model: "meta-llama/llama-4-scout-17b-16e-instruct",
-        temperature: 0.8,
-        max_tokens: 6000, // Increased for longer, well-formatted answers
+        temperature: 0.9, // Higher temperature for more variety
+        max_tokens: 8000,
         response_format: { type: "json_object" }
       });
 
@@ -92,9 +109,9 @@ export const useLLM = () => {
         throw new Error('No response from Groq API');
       }
 
-      console.log('Raw API response:', response);
+      console.log('Received response from API, parsing...');
 
-      // Parse the JSON response with better error handling
+      // Parse the JSON response
       let questionsData;
       try {
         const parsedResponse = JSON.parse(response);
@@ -116,42 +133,54 @@ export const useLLM = () => {
         throw new Error('Invalid JSON response from API');
       }
 
-      // Validate we have the right number of questions
       if (!Array.isArray(questionsData) || questionsData.length === 0) {
         console.error('No questions in response:', questionsData);
         throw new Error('No questions received from API');
       }
 
-      console.log(`Generated ${questionsData.length} questions:`, questionsData);
-      
-      // Transform to our Question format with unique IDs
-      const questions: Question[] = questionsData.slice(0, config.numberOfQuestions).map((q: any, index: number) => {
+      console.log(`Received ${questionsData.length} questions from API`);
+
+      // Transform and validate questions
+      const questions: Question[] = [];
+      const usedQuestions = new Set<string>();
+
+      for (let i = 0; i < Math.min(questionsData.length, config.numberOfQuestions); i++) {
+        const q = questionsData[i];
+        
+        // Normalize question text for duplicate detection
+        const normalizedQuestion = q.question?.toLowerCase().trim();
+        
+        if (!normalizedQuestion || usedQuestions.has(normalizedQuestion)) {
+          console.warn(`Skipping duplicate or invalid question at index ${i}:`, q.question);
+          continue;
+        }
+
+        usedQuestions.add(normalizedQuestion);
+
         const question: Question = {
-          id: `q-${Date.now()}-${index}`,
-          question: q.question || `Question ${index + 1}: What is your experience with ${config.skills[index % config.skills.length]}?`,
-          type: q.type || config.questionTypes[index % config.questionTypes.length],
-          category: q.category || config.skills[index % config.skills.length],
+          id: `q-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${i}`,
+          question: q.question || `Question ${i + 1}: What is your experience with ${config.skills[i % config.skills.length]}?`,
+          type: q.type || config.questionTypes[i % config.questionTypes.length],
+          category: q.category || config.skills[i % config.skills.length],
           difficulty: config.proficiencyLevel,
-          answer: q.answer || `Sample answer for question ${index + 1}`,
+          answer: q.answer || `Sample answer for question ${i + 1}`,
           explanation: q.explanation || `This question tests your knowledge and experience.`,
           links: Array.isArray(q.links) ? q.links : []
         };
         
-        console.log(`Question ${index + 1}:`, question.question);
-        return question;
-      });
-
-      // Ensure we have exactly the requested number of questions
-      if (questions.length < config.numberOfQuestions) {
-        console.warn(`Only generated ${questions.length} questions, requested ${config.numberOfQuestions}`);
-        // Fill remaining with fallback questions
-        while (questions.length < config.numberOfQuestions) {
-          const index = questions.length;
-          questions.push(generateFallbackQuestion(index, config));
-        }
+        questions.push(question);
+        console.log(`Added question ${questions.length}: ${question.question.substring(0, 80)}...`);
       }
 
-      console.log(`Final questions array (${questions.length} questions):`, questions.map(q => q.question));
+      // If we don't have enough unique questions, generate fallback questions
+      while (questions.length < config.numberOfQuestions) {
+        const fallbackQuestion = generateFallbackQuestion(questions.length, config, usedQuestions);
+        questions.push(fallbackQuestion);
+        console.log(`Added fallback question ${questions.length}: ${fallbackQuestion.question.substring(0, 80)}...`);
+      }
+
+      console.log(`Final questions array: ${questions.length} unique questions generated`);
+      console.log('Question previews:', questions.map((q, i) => `${i + 1}. ${q.question.substring(0, 60)}...`));
       
       setLoading(false);
       return questions;
@@ -165,11 +194,22 @@ export const useLLM = () => {
     }
   };
 
-  const generateFallbackQuestion = (index: number, config: InterviewConfig): Question => {
+  const generateFallbackQuestion = (index: number, config: InterviewConfig, usedQuestions: Set<string>): Question => {
     const skillIndex = index % config.skills.length;
     const typeIndex = index % config.questionTypes.length;
     const skill = config.skills[skillIndex];
     const type = config.questionTypes[typeIndex];
+    
+    // Create unique variations to avoid duplicates
+    const variations = [
+      'implement', 'design', 'optimize', 'debug', 'explain', 'compare', 'analyze', 'create'
+    ];
+    const variation = variations[index % variations.length];
+    
+    const concepts = [
+      'data structure', 'algorithm', 'pattern', 'system', 'component', 'feature', 'process', 'workflow'
+    ];
+    const concept = concepts[index % concepts.length];
     
     let questionText = '';
     let answer = '';
@@ -178,38 +218,108 @@ export const useLLM = () => {
     // Generate different questions based on type with proper formatting
     switch (type) {
       case 'technical-coding':
-        questionText = `Write a function in ${skill} to find the ${index % 2 === 0 ? 'maximum' : 'minimum'} element in an array and return its index.`;
-        answer = `Here's a solution:\n\n\`\`\`javascript\nfunction find${index % 2 === 0 ? 'Max' : 'Min'}Index(arr) {\n  if (arr.length === 0) return -1;\n  \n  let ${index % 2 === 0 ? 'max' : 'min'}Value = arr[0];\n  let ${index % 2 === 0 ? 'max' : 'min'}Index = 0;\n  \n  for (let i = 1; i < arr.length; i++) {\n    if (arr[i] ${index % 2 === 0 ? '>' : '<'} ${index % 2 === 0 ? 'max' : 'min'}Value) {\n      ${index % 2 === 0 ? 'max' : 'min'}Value = arr[i];\n      ${index % 2 === 0 ? 'max' : 'min'}Index = i;\n    }\n  }\n  \n  return ${index % 2 === 0 ? 'max' : 'min'}Index;\n}\n\`\`\`\n\n**Time Complexity:** O(n)\n**Space Complexity:** O(1)\n\nThis solution iterates through the array once, keeping track of the ${index % 2 === 0 ? 'maximum' : 'minimum'} value and its index.`;
-        explanation = `This question tests your ability to write efficient algorithms and understand time/space complexity analysis.`;
+        const problems = [
+          'find the maximum element in an array',
+          'reverse a linked list',
+          'implement binary search',
+          'sort an array using merge sort',
+          'find the first non-repeating character',
+          'implement a stack using arrays',
+          'check if a string is a palindrome',
+          'find the intersection of two arrays'
+        ];
+        const problem = problems[index % problems.length];
+        
+        questionText = `Using ${skill}, ${variation} a solution to ${problem}. Provide time and space complexity analysis.`;
+        answer = `Here's a solution:\n\n\`\`\`javascript\nfunction solve${index}(input) {\n  // Implementation for ${problem}\n  if (!input || input.length === 0) {\n    return null;\n  }\n  \n  let result = input[0];\n  \n  for (let i = 1; i < input.length; i++) {\n    // Process each element\n    if (input[i] > result) {\n      result = input[i];\n    }\n  }\n  \n  return result;\n}\n\`\`\`\n\n**Time Complexity:** O(n)\n**Space Complexity:** O(1)\n\nThis solution efficiently handles the problem by iterating through the input once.`;
+        explanation = `This question tests your ability to write efficient algorithms and understand complexity analysis.`;
         break;
         
       case 'technical-concepts':
-        questionText = `Explain the concept of ${skill} and its key principles. How does it apply to ${config.role} responsibilities?`;
-        answer = `${skill} is a fundamental concept in ${config.role} work. Here are the key principles:\n\n• **Core Concept:** ${skill} enables efficient development and maintainable code architecture\n• **Key Benefits:**\n  - Improved code organization\n  - Better maintainability\n  - Enhanced performance\n  - Easier testing and debugging\n\n• **Application in ${config.role}:**\n  - Used for building scalable applications\n  - Helps in creating reusable components\n  - Facilitates team collaboration\n  - Ensures code quality standards\n\n• **Best Practices:**\n  - Follow established patterns\n  - Write clean, readable code\n  - Implement proper error handling\n  - Use appropriate design patterns`;
+        const concepts = [
+          'inheritance and polymorphism',
+          'asynchronous programming',
+          'memory management',
+          'design patterns',
+          'data binding',
+          'state management',
+          'error handling',
+          'performance optimization'
+        ];
+        const conceptTopic = concepts[index % concepts.length];
+        
+        questionText = `${variation.charAt(0).toUpperCase() + variation.slice(1)} the concept of ${conceptTopic} in ${skill}. How does it apply to ${config.role} responsibilities?`;
+        answer = `${conceptTopic.charAt(0).toUpperCase() + conceptTopic.slice(1)} in ${skill}:\n\n**Core Principles:**\n• **Definition:** ${conceptTopic} enables efficient development patterns\n• **Key Benefits:**\n  - Improved code organization\n  - Better maintainability\n  - Enhanced performance\n  - Easier testing and debugging\n\n**Application in ${config.role}:**\n• Used for building scalable applications\n• Helps in creating reusable components\n• Facilitates team collaboration\n• Ensures code quality standards\n\n**Best Practices:**\n• Follow established patterns\n• Write clean, readable code\n• Implement proper error handling\n• Use appropriate design patterns`;
         explanation = `This question evaluates your theoretical understanding of core concepts and ability to explain technical topics clearly.`;
         break;
         
       case 'system-design':
-        questionText = `Design a ${index % 2 === 0 ? 'scalable web application' : 'distributed system'} that handles ${skill}. Consider performance, scalability, and reliability.`;
-        answer = `Here's a high-level system design:\n\n**Architecture Overview:**\n• **Frontend:** React/Vue.js application\n• **API Gateway:** Routes requests and handles authentication\n• **Microservices:** Separate services for different functionalities\n• **Database:** Distributed database with read replicas\n• **Caching:** Redis for session management and data caching\n• **Message Queue:** For asynchronous processing\n\n**Scalability Considerations:**\n• **Horizontal Scaling:** Auto-scaling groups for services\n• **Load Balancing:** Distribute traffic across multiple instances\n• **Database Sharding:** Partition data across multiple databases\n• **CDN:** Content delivery network for static assets\n\n**Reliability Measures:**\n• **Health Checks:** Monitor service availability\n• **Circuit Breakers:** Prevent cascade failures\n• **Backup Strategy:** Regular automated backups\n• **Monitoring:** Comprehensive logging and alerting`;
+        const systems = [
+          'chat application',
+          'e-commerce platform',
+          'social media feed',
+          'video streaming service',
+          'file storage system',
+          'notification service',
+          'search engine',
+          'payment processing system'
+        ];
+        const system = systems[index % systems.length];
+        
+        questionText = `${variation.charAt(0).toUpperCase() + variation.slice(1)} a scalable ${system} that handles ${skill}. Consider performance, scalability, and reliability.`;
+        answer = `System Design for ${system}:\n\n**Architecture Overview:**\n• **Frontend:** React/Vue.js application with responsive design\n• **API Gateway:** Routes requests and handles authentication\n• **Microservices:** Separate services for different functionalities\n• **Database:** Distributed database with read replicas\n• **Caching:** Redis for session management and data caching\n• **Message Queue:** For asynchronous processing\n\n**Scalability Considerations:**\n• **Horizontal Scaling:** Auto-scaling groups for services\n• **Load Balancing:** Distribute traffic across multiple instances\n• **Database Sharding:** Partition data across multiple databases\n• **CDN:** Content delivery network for static assets\n\n**Reliability Measures:**\n• **Health Checks:** Monitor service availability\n• **Circuit Breakers:** Prevent cascade failures\n• **Backup Strategy:** Regular automated backups\n• **Monitoring:** Comprehensive logging and alerting`;
         explanation = `This tests your ability to design large-scale systems and consider trade-offs between different architectural decisions.`;
         break;
         
       case 'behavioral':
-        questionText = `Tell me about a time when you had to ${index % 2 === 0 ? 'overcome a technical challenge' : 'work with a difficult team member'} while working with ${skill}.`;
-        answer = `I'll use the STAR method to answer this:\n\n**Situation:**\nDescribe the specific context and background of the situation.\n\n**Task:**\nExplain what needed to be accomplished and your role in it.\n\n**Action:**\nDetail the specific steps you took to address the challenge:\n• Analyzed the problem thoroughly\n• Researched potential solutions\n• Collaborated with team members\n• Implemented the chosen approach\n• Monitored the results\n\n**Result:**\nShare the positive outcome and what you learned:\n• Successfully resolved the issue\n• Improved team processes\n• Gained valuable experience\n• Applied lessons to future projects`;
+        const situations = [
+          'overcome a technical challenge',
+          'work with a difficult team member',
+          'meet a tight deadline',
+          'learn a new technology quickly',
+          'handle conflicting requirements',
+          'lead a project initiative',
+          'resolve a production issue',
+          'mentor a junior developer'
+        ];
+        const situation = situations[index % situations.length];
+        
+        questionText = `Tell me about a time when you had to ${situation} while working with ${skill}. What was your approach?`;
+        answer = `I'll use the STAR method to answer this:\n\n**Situation:**\nDescribe the specific context where I needed to ${situation}.\n\n**Task:**\nExplain what needed to be accomplished and my role:\n• Define the specific challenge or goal\n• Identify stakeholders and constraints\n• Understand the timeline and resources\n\n**Action:**\nDetail the specific steps I took:\n• Analyzed the problem thoroughly\n• Researched potential solutions\n• Collaborated with team members\n• Implemented the chosen approach\n• Monitored progress and adjusted as needed\n\n**Result:**\nShare the positive outcome and lessons learned:\n• Successfully achieved the objective\n• Improved team processes and communication\n• Gained valuable experience in ${skill}\n• Applied lessons to future similar situations`;
         explanation = `This evaluates your soft skills, problem-solving approach, and ability to work effectively in team environments.`;
         break;
         
       default:
-        questionText = `How would you approach ${index % 2 === 0 ? 'debugging' : 'optimizing'} a ${config.role} application that uses ${skill}?`;
-        answer = `Here's my systematic approach:\n\n**1. Problem Identification:**\n• Reproduce the issue consistently\n• Gather relevant logs and error messages\n• Identify the scope and impact\n\n**2. Analysis:**\n• Use debugging tools and profilers\n• Check recent code changes\n• Review system metrics and performance data\n\n**3. Solution Implementation:**\n• Start with the most likely cause\n• Make incremental changes\n• Test each change thoroughly\n• Document the solution\n\n**4. Verification:**\n• Confirm the fix resolves the issue\n• Run comprehensive tests\n• Monitor for any side effects\n• Update documentation and processes`;
+        const approaches = [
+          'debugging a performance issue',
+          'optimizing code efficiency',
+          'implementing security measures',
+          'conducting code reviews',
+          'testing and validation',
+          'documentation and maintenance',
+          'integration and deployment',
+          'monitoring and alerting'
+        ];
+        const approach = approaches[index % approaches.length];
+        
+        questionText = `How would you approach ${approach} in a ${config.role} application that uses ${skill}?`;
+        answer = `Approach to ${approach}:\n\n**1. Problem Identification:**\n• Reproduce the issue consistently\n• Gather relevant logs and error messages\n• Identify the scope and impact\n• Document findings clearly\n\n**2. Analysis Phase:**\n• Use debugging tools and profilers\n• Check recent code changes and deployments\n• Review system metrics and performance data\n• Consult with team members and documentation\n\n**3. Solution Implementation:**\n• Start with the most likely cause\n• Make incremental, testable changes\n• Follow established coding standards\n• Document the solution approach\n\n**4. Verification and Follow-up:**\n• Confirm the fix resolves the issue\n• Run comprehensive test suites\n• Monitor for any side effects\n• Update documentation and processes`;
         explanation = `This tests your problem-solving methodology and practical experience with debugging and optimization techniques.`;
     }
     
+    // Ensure question is unique
+    let finalQuestion = questionText;
+    let counter = 1;
+    while (usedQuestions.has(finalQuestion.toLowerCase().trim())) {
+      finalQuestion = `${questionText} (Variation ${counter})`;
+      counter++;
+    }
+    
+    usedQuestions.add(finalQuestion.toLowerCase().trim());
+    
     return {
-      id: `fallback-q-${Date.now()}-${index}`,
-      question: questionText,
+      id: `fallback-q-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${index}`,
+      question: finalQuestion,
       type: type,
       category: skill,
       difficulty: config.proficiencyLevel,
@@ -320,12 +430,13 @@ export const useLLM = () => {
     console.log('Generating mock questions as fallback');
     
     const mockQuestions = [];
+    const usedQuestions = new Set<string>();
     
     for (let i = 0; i < config.numberOfQuestions; i++) {
-      mockQuestions.push(generateFallbackQuestion(i, config));
+      mockQuestions.push(generateFallbackQuestion(i, config, usedQuestions));
     }
     
-    console.log(`Generated ${mockQuestions.length} mock questions:`, mockQuestions.map(q => q.question));
+    console.log(`Generated ${mockQuestions.length} mock questions:`, mockQuestions.map(q => q.question.substring(0, 60) + '...'));
     return mockQuestions;
   };
 

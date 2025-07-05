@@ -2,10 +2,17 @@ import { useState } from 'react';
 import Groq from 'groq-sdk';
 import { InterviewConfig, Question, UserAnswer, EvaluationResult, QuestionType } from '../types';
 
-// Initialize Groq client
+// Initialize Groq client with detailed logging
 const groq = new Groq({
   apiKey: import.meta.env.VITE_GROQ_API_KEY || 'your-groq-api-key-here',
   dangerouslyAllowBrowser: true
+});
+
+// Log API key status (without exposing the actual key)
+console.log('🔑 Groq API Key Status:', {
+  hasKey: !!import.meta.env.VITE_GROQ_API_KEY,
+  keyLength: import.meta.env.VITE_GROQ_API_KEY?.length || 0,
+  keyPrefix: import.meta.env.VITE_GROQ_API_KEY?.substring(0, 8) + '...' || 'Not set'
 });
 
 const getQuestionTypeDescription = (type: QuestionType): string => {
@@ -26,10 +33,20 @@ export const useLLM = () => {
   const [loading, setLoading] = useState(false);
 
   const generateQuestions = async (config: InterviewConfig): Promise<Question[]> => {
+    console.log('🚀 Starting question generation process...');
+    console.log('📋 Config received:', JSON.stringify(config, null, 2));
+    
     setLoading(true);
     
     try {
-      console.log('Starting question generation with config:', config);
+      // Check API key before making request
+      if (!import.meta.env.VITE_GROQ_API_KEY || import.meta.env.VITE_GROQ_API_KEY === 'your-groq-api-key-here') {
+        console.error('❌ Groq API key is not properly configured!');
+        console.log('💡 Please set VITE_GROQ_API_KEY in your .env file');
+        throw new Error('Groq API key not configured. Please check your .env file.');
+      }
+
+      console.log('✅ API key is configured, proceeding with API call...');
       
       // Create a more detailed prompt that ensures unique questions
       const questionTypesDescription = config.questionTypes
@@ -45,7 +62,7 @@ export const useLLM = () => {
         count: questionsPerType + (index < remainingQuestions ? 1 : 0)
       }));
 
-      console.log('Question type distribution:', typeDistribution);
+      console.log('📊 Question type distribution:', typeDistribution);
 
       const prompt = `You are generating interview questions for a ${config.role} position at ${config.company}.
 
@@ -85,7 +102,10 @@ Return a JSON array with this exact structure:
   }
 ]`;
 
-      console.log('Sending prompt to Groq API...');
+      console.log('📝 Prompt prepared, length:', prompt.length);
+      console.log('🌐 Making API call to Groq...');
+
+      const startTime = Date.now();
 
       const completion = await groq.chat.completions.create({
         messages: [
@@ -104,41 +124,59 @@ Return a JSON array with this exact structure:
         response_format: { type: "json_object" }
       });
 
+      const endTime = Date.now();
+      const apiCallDuration = endTime - startTime;
+
+      console.log('✅ API call completed successfully!');
+      console.log('⏱️ API call duration:', apiCallDuration + 'ms');
+      console.log('📊 API response metadata:', {
+        model: completion.model,
+        usage: completion.usage,
+        finishReason: completion.choices[0]?.finish_reason
+      });
+
       const response = completion.choices[0]?.message?.content;
       if (!response) {
+        console.error('❌ No content in API response');
         throw new Error('No response from Groq API');
       }
 
-      console.log('Received response from API, parsing...');
+      console.log('📄 Raw API response length:', response.length);
+      console.log('📄 Raw API response preview:', response.substring(0, 200) + '...');
 
       // Parse the JSON response
       let questionsData;
       try {
+        console.log('🔍 Parsing JSON response...');
         const parsedResponse = JSON.parse(response);
         
         // Handle different response formats
         if (Array.isArray(parsedResponse)) {
           questionsData = parsedResponse;
+          console.log('✅ Response is direct array format');
         } else if (parsedResponse.questions && Array.isArray(parsedResponse.questions)) {
           questionsData = parsedResponse.questions;
+          console.log('✅ Response has questions property');
         } else if (parsedResponse.data && Array.isArray(parsedResponse.data)) {
           questionsData = parsedResponse.data;
+          console.log('✅ Response has data property');
         } else {
-          console.error('Unexpected response format:', parsedResponse);
+          console.error('❌ Unexpected response format:', Object.keys(parsedResponse));
+          console.error('Full response:', parsedResponse);
           throw new Error('Response is not in expected format');
         }
       } catch (parseError) {
-        console.error('JSON parsing error:', parseError);
-        console.error('Raw response:', response);
+        console.error('❌ JSON parsing error:', parseError);
+        console.error('Raw response that failed to parse:', response);
         throw new Error('Invalid JSON response from API');
       }
 
       if (!Array.isArray(questionsData) || questionsData.length === 0) {
-        console.error('No questions in response:', questionsData);
+        console.error('❌ No questions in parsed response:', questionsData);
         throw new Error('No questions received from API');
       }
 
-      console.log(`Received ${questionsData.length} questions from API`);
+      console.log(`✅ Successfully parsed ${questionsData.length} questions from API`);
 
       // Transform and validate questions
       const questions: Question[] = [];
@@ -147,11 +185,19 @@ Return a JSON array with this exact structure:
       for (let i = 0; i < Math.min(questionsData.length, config.numberOfQuestions); i++) {
         const q = questionsData[i];
         
+        console.log(`🔍 Processing question ${i + 1}:`, {
+          hasQuestion: !!q.question,
+          questionLength: q.question?.length || 0,
+          hasAnswer: !!q.answer,
+          hasType: !!q.type,
+          type: q.type
+        });
+        
         // Normalize question text for duplicate detection
         const normalizedQuestion = q.question?.toLowerCase().trim();
         
         if (!normalizedQuestion || usedQuestions.has(normalizedQuestion)) {
-          console.warn(`Skipping duplicate or invalid question at index ${i}:`, q.question);
+          console.warn(`⚠️ Skipping duplicate or invalid question at index ${i}:`, q.question?.substring(0, 50) + '...');
           continue;
         }
 
@@ -169,32 +215,187 @@ Return a JSON array with this exact structure:
         };
         
         questions.push(question);
-        console.log(`Added question ${questions.length}: ${question.question.substring(0, 80)}...`);
+        console.log(`✅ Added question ${questions.length}: ${question.question.substring(0, 80)}...`);
       }
 
       // If we don't have enough unique questions, generate fallback questions
       while (questions.length < config.numberOfQuestions) {
+        console.log(`⚠️ Need more questions (${questions.length}/${config.numberOfQuestions}), generating fallback...`);
         const fallbackQuestion = generateFallbackQuestion(questions.length, config, usedQuestions);
         questions.push(fallbackQuestion);
-        console.log(`Added fallback question ${questions.length}: ${fallbackQuestion.question.substring(0, 80)}...`);
+        console.log(`✅ Added fallback question ${questions.length}: ${fallbackQuestion.question.substring(0, 80)}...`);
       }
 
-      console.log(`Final questions array: ${questions.length} unique questions generated`);
-      console.log('Question previews:', questions.map((q, i) => `${i + 1}. ${q.question.substring(0, 60)}...`));
+      console.log(`🎉 Final questions array: ${questions.length} unique questions generated`);
+      console.log('📋 Question previews:', questions.map((q, i) => `${i + 1}. ${q.question.substring(0, 60)}...`));
       
       setLoading(false);
       return questions;
     } catch (error) {
-      console.error('Error generating questions:', error);
+      console.error('❌ Error in generateQuestions:', error);
+      
+      // Log specific error details
+      if (error instanceof Error) {
+        console.error('Error name:', error.name);
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+      }
+      
+      // Check if it's an API key issue
+      if (error.message?.includes('API key') || error.message?.includes('authentication')) {
+        console.error('🔑 This appears to be an API key issue');
+        alert('API Key Error: Please check your Groq API key configuration in the .env file');
+      }
+      
       setLoading(false);
       
       // Fallback to mock questions if API fails
-      console.log('Falling back to mock questions');
+      console.log('🔄 Falling back to mock questions due to API error');
       return generateMockQuestions(config);
     }
   };
 
+  const evaluateAnswers = async (
+    questions: Question[],
+    answers: UserAnswer[],
+    config: InterviewConfig
+  ): Promise<EvaluationResult> => {
+    console.log('🚀 Starting answer evaluation process...');
+    console.log('📊 Evaluation data:', {
+      questionsCount: questions.length,
+      answersCount: answers.length,
+      config: config.role + ' at ' + config.company
+    });
+    
+    setLoading(true);
+    
+    try {
+      // Check API key before making request
+      if (!import.meta.env.VITE_GROQ_API_KEY || import.meta.env.VITE_GROQ_API_KEY === 'your-groq-api-key-here') {
+        console.error('❌ Groq API key is not properly configured for evaluation!');
+        throw new Error('Groq API key not configured for evaluation');
+      }
+
+      console.log('✅ API key is configured, proceeding with evaluation API call...');
+      
+      const evaluationPrompt = `Evaluate the following interview answers for a ${config.role} position at ${config.company}.
+      
+      Questions and Answers:
+      ${questions.map((q, i) => {
+        const userAnswer = answers.find(a => a.questionId === q.id);
+        return `
+        Question ${i + 1} (Type: ${q.type}): ${q.question}
+        Expected Answer: ${q.answer}
+        User Answer: ${userAnswer?.answer || 'No answer provided'}
+        Time Spent: ${userAnswer?.timeSpent || 0} seconds
+        `;
+      }).join('\n')}
+      
+      Return ONLY a valid JSON object with this exact structure:
+      {
+        "score": 85,
+        "assessedProficiency": "advanced",
+        "categoryScores": {
+          "React": 90,
+          "JavaScript": 80
+        },
+        "typeScores": {
+          "technical-coding": 85,
+          "behavioral": 90
+        },
+        "feedback": "Overall feedback text",
+        "recommendations": ["recommendation 1", "recommendation 2"]
+      }
+      
+      Score should be 0-100. AssessedProficiency should be: beginner, intermediate, advanced, or expert.
+      Include scores for both skill categories and question types.`;
+
+      console.log('📝 Evaluation prompt prepared, making API call...');
+      const startTime = Date.now();
+
+      const completion = await groq.chat.completions.create({
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert technical interviewer. Provide fair and constructive evaluation of interview answers, considering both technical accuracy and communication skills. You must respond with valid JSON only, no additional text or explanations."
+          },
+          {
+            role: "user",
+            content: evaluationPrompt
+          }
+        ],
+        model: "meta-llama/llama-4-scout-17b-16e-instruct",
+        temperature: 0.3,
+        max_tokens: 2000,
+        response_format: { type: "json_object" }
+      });
+
+      const endTime = Date.now();
+      const apiCallDuration = endTime - startTime;
+
+      console.log('✅ Evaluation API call completed successfully!');
+      console.log('⏱️ Evaluation API call duration:', apiCallDuration + 'ms');
+
+      const response = completion.choices[0]?.message?.content;
+      if (!response) {
+        console.error('❌ No content in evaluation API response');
+        throw new Error('No response from Groq API');
+      }
+
+      console.log('📄 Evaluation response length:', response.length);
+      console.log('📄 Evaluation response preview:', response.substring(0, 200) + '...');
+
+      // Parse the JSON response with better error handling
+      let evaluationData;
+      try {
+        console.log('🔍 Parsing evaluation JSON response...');
+        evaluationData = JSON.parse(response);
+        console.log('✅ Evaluation JSON parsed successfully');
+      } catch (parseError) {
+        console.error('❌ Evaluation JSON parsing error:', parseError);
+        console.error('Raw evaluation response:', response);
+        throw new Error('Invalid JSON response from API');
+      }
+      
+      const result: EvaluationResult = {
+        score: evaluationData.score,
+        totalQuestions: questions.length,
+        assessedProficiency: evaluationData.assessedProficiency,
+        categoryScores: evaluationData.categoryScores,
+        typeScores: evaluationData.typeScores || {},
+        feedback: evaluationData.feedback,
+        recommendations: evaluationData.recommendations
+      };
+
+      console.log('🎉 Evaluation completed successfully:', {
+        score: result.score,
+        proficiency: result.assessedProficiency,
+        categoriesCount: Object.keys(result.categoryScores).length,
+        typesCount: Object.keys(result.typeScores).length
+      });
+
+      setLoading(false);
+      return result;
+    } catch (error) {
+      console.error('❌ Error in evaluateAnswers:', error);
+      
+      // Log specific error details
+      if (error instanceof Error) {
+        console.error('Evaluation error name:', error.name);
+        console.error('Evaluation error message:', error.message);
+      }
+      
+      setLoading(false);
+      
+      // Fallback evaluation
+      console.log('🔄 Falling back to mock evaluation due to API error');
+      return generateMockEvaluation(questions, answers, config);
+    }
+  };
+
   const generateFallbackQuestion = (index: number, config: InterviewConfig, usedQuestions: Set<string>): Question => {
+    console.log(`🔄 Generating fallback question ${index + 1}`);
+    
     const skillIndex = index % config.skills.length;
     const typeIndex = index % config.questionTypes.length;
     const skill = config.skills[skillIndex];
@@ -317,7 +518,7 @@ Return a JSON array with this exact structure:
     
     usedQuestions.add(finalQuestion.toLowerCase().trim());
     
-    return {
+    const fallbackQuestion = {
       id: `fallback-q-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${index}`,
       question: finalQuestion,
       type: type,
@@ -330,104 +531,14 @@ Return a JSON array with this exact structure:
         `https://github.com/topics/${skill.toLowerCase().replace(/\s+/g, '-')}`
       ]
     };
-  };
-
-  const evaluateAnswers = async (
-    questions: Question[],
-    answers: UserAnswer[],
-    config: InterviewConfig
-  ): Promise<EvaluationResult> => {
-    setLoading(true);
     
-    try {
-      const evaluationPrompt = `Evaluate the following interview answers for a ${config.role} position at ${config.company}.
-      
-      Questions and Answers:
-      ${questions.map((q, i) => {
-        const userAnswer = answers.find(a => a.questionId === q.id);
-        return `
-        Question ${i + 1} (Type: ${q.type}): ${q.question}
-        Expected Answer: ${q.answer}
-        User Answer: ${userAnswer?.answer || 'No answer provided'}
-        Time Spent: ${userAnswer?.timeSpent || 0} seconds
-        `;
-      }).join('\n')}
-      
-      Return ONLY a valid JSON object with this exact structure:
-      {
-        "score": 85,
-        "assessedProficiency": "advanced",
-        "categoryScores": {
-          "React": 90,
-          "JavaScript": 80
-        },
-        "typeScores": {
-          "technical-coding": 85,
-          "behavioral": 90
-        },
-        "feedback": "Overall feedback text",
-        "recommendations": ["recommendation 1", "recommendation 2"]
-      }
-      
-      Score should be 0-100. AssessedProficiency should be: beginner, intermediate, advanced, or expert.
-      Include scores for both skill categories and question types.`;
-
-      const completion = await groq.chat.completions.create({
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert technical interviewer. Provide fair and constructive evaluation of interview answers, considering both technical accuracy and communication skills. You must respond with valid JSON only, no additional text or explanations."
-          },
-          {
-            role: "user",
-            content: evaluationPrompt
-          }
-        ],
-        model: "meta-llama/llama-4-scout-17b-16e-instruct",
-        temperature: 0.3,
-        max_tokens: 2000,
-        response_format: { type: "json_object" }
-      });
-
-      const response = completion.choices[0]?.message?.content;
-      if (!response) {
-        throw new Error('No response from Groq API');
-      }
-
-      // Parse the JSON response with better error handling
-      let evaluationData;
-      try {
-        evaluationData = JSON.parse(response);
-      } catch (parseError) {
-        console.error('JSON parsing error:', parseError);
-        console.error('Raw response:', response);
-        throw new Error('Invalid JSON response from API');
-      }
-      
-      const result: EvaluationResult = {
-        score: evaluationData.score,
-        totalQuestions: questions.length,
-        assessedProficiency: evaluationData.assessedProficiency,
-        categoryScores: evaluationData.categoryScores,
-        typeScores: evaluationData.typeScores || {},
-        feedback: evaluationData.feedback,
-        recommendations: evaluationData.recommendations
-      };
-
-      setLoading(false);
-      return result;
-    } catch (error) {
-      console.error('Error evaluating answers:', error);
-      setLoading(false);
-      
-      // Fallback evaluation
-      return generateMockEvaluation(questions, answers, config);
-    }
+    console.log(`✅ Generated fallback question: ${fallbackQuestion.question.substring(0, 60)}...`);
+    return fallbackQuestion;
   };
 
   // Fallback functions for when API fails
   const generateMockQuestions = (config: InterviewConfig): Question[] => {
-    console.log('Generating mock questions as fallback');
+    console.log('🔄 Generating mock questions as fallback');
     
     const mockQuestions = [];
     const usedQuestions = new Set<string>();
@@ -436,7 +547,7 @@ Return a JSON array with this exact structure:
       mockQuestions.push(generateFallbackQuestion(i, config, usedQuestions));
     }
     
-    console.log(`Generated ${mockQuestions.length} mock questions:`, mockQuestions.map(q => q.question.substring(0, 60) + '...'));
+    console.log(`✅ Generated ${mockQuestions.length} mock questions:`, mockQuestions.map(q => q.question.substring(0, 60) + '...'));
     return mockQuestions;
   };
 
@@ -445,6 +556,8 @@ Return a JSON array with this exact structure:
     answers: UserAnswer[],
     config: InterviewConfig
   ): EvaluationResult => {
+    console.log('🔄 Generating mock evaluation as fallback');
+    
     const totalQuestions = questions.length;
     const score = Math.floor(Math.random() * 40 + 60); // Mock score between 60-100
     
@@ -458,7 +571,7 @@ Return a JSON array with this exact structure:
       typeScores[type] = Math.floor(Math.random() * 40 + 60);
     });
     
-    return {
+    const mockEvaluation = {
       score,
       totalQuestions,
       assessedProficiency: score >= 85 ? 'expert' : score >= 70 ? 'advanced' : score >= 55 ? 'intermediate' : 'beginner',
@@ -473,6 +586,9 @@ Return a JSON array with this exact structure:
         'Work on behavioral interview responses using the STAR method'
       ]
     };
+    
+    console.log('✅ Generated mock evaluation:', { score: mockEvaluation.score, proficiency: mockEvaluation.assessedProficiency });
+    return mockEvaluation;
   };
 
   return { generateQuestions, evaluateAnswers, loading };

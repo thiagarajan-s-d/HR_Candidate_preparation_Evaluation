@@ -58,6 +58,73 @@ const getQuestionTypeLabel = (type: QuestionType) => {
   return labels[type] || type;
 };
 
+// Component to render formatted text with proper line breaks and code blocks
+const FormattedText: React.FC<{ text: string }> = ({ text }) => {
+  // Convert markdown-style code blocks and formatting
+  const formatText = (text: string) => {
+    // Split by code blocks first
+    const parts = text.split(/```(\w+)?\n([\s\S]*?)```/g);
+    const elements = [];
+    
+    for (let i = 0; i < parts.length; i++) {
+      if (i % 3 === 0) {
+        // Regular text part
+        const textPart = parts[i];
+        if (textPart) {
+          // Handle line breaks and bullet points
+          const lines = textPart.split('\n');
+          lines.forEach((line, lineIndex) => {
+            if (line.trim()) {
+              // Handle bold text
+              const boldFormatted = line.split(/\*\*(.*?)\*\*/g);
+              const lineElements = boldFormatted.map((part, partIndex) => {
+                if (partIndex % 2 === 1) {
+                  return <strong key={partIndex}>{part}</strong>;
+                }
+                return part;
+              });
+              
+              // Check if it's a bullet point
+              if (line.trim().startsWith('•') || line.trim().startsWith('-')) {
+                elements.push(
+                  <div key={`${i}-${lineIndex}`} className="ml-4 mb-1">
+                    {lineElements}
+                  </div>
+                );
+              } else {
+                elements.push(
+                  <div key={`${i}-${lineIndex}`} className="mb-2">
+                    {lineElements}
+                  </div>
+                );
+              }
+            } else if (lineIndex < lines.length - 1) {
+              elements.push(<br key={`${i}-br-${lineIndex}`} />);
+            }
+          });
+        }
+      } else if (i % 3 === 2) {
+        // Code block content
+        const language = parts[i - 1] || 'javascript';
+        const code = parts[i];
+        if (code) {
+          elements.push(
+            <pre key={`code-${i}`} className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto my-4">
+              <code className={`language-${language}`}>
+                {code.trim()}
+              </code>
+            </pre>
+          );
+        }
+      }
+    }
+    
+    return elements;
+  };
+
+  return <div className="whitespace-pre-wrap">{formatText(text)}</div>;
+};
+
 export const QuestionView: React.FC<QuestionViewProps> = ({
   question,
   mode,
@@ -160,7 +227,7 @@ export const QuestionView: React.FC<QuestionViewProps> = ({
       <div className="p-6 space-y-6">
         <div className="bg-gray-50 p-4 rounded-lg">
           <h3 className="text-lg font-medium text-gray-900 mb-2">Question:</h3>
-          <p className="text-gray-700 leading-relaxed">{question.question}</p>
+          <FormattedText text={question.question} />
         </div>
 
         {/* Answer Input with Voice Support */}
@@ -217,12 +284,16 @@ export const QuestionView: React.FC<QuestionViewProps> = ({
               <BookOpen className="h-5 w-5 text-green-600" />
               <h3 className="text-lg font-medium text-green-800">Sample Answer:</h3>
             </div>
-            <p className="text-green-700 leading-relaxed mb-3">{question.answer}</p>
+            <div className="text-green-700 leading-relaxed mb-3">
+              <FormattedText text={question.answer} />
+            </div>
             
             {question.explanation && (
               <div className="bg-green-100 p-3 rounded-lg">
                 <h4 className="font-medium text-green-800 mb-1">Explanation:</h4>
-                <p className="text-green-700 text-sm">{question.explanation}</p>
+                <div className="text-green-700 text-sm">
+                  <FormattedText text={question.explanation} />
+                </div>
               </div>
             )}
           </motion.div>

@@ -71,14 +71,27 @@ function App() {
     setConfig(interviewConfig);
     
     try {
+      console.log('Generating questions for config:', interviewConfig);
       const generatedQuestions = await generateQuestions(interviewConfig);
-      console.log('Generated questions:', generatedQuestions);
-      setQuestions(generatedQuestions);
+      console.log('Generated questions received:', generatedQuestions.length, 'questions');
+      console.log('Questions preview:', generatedQuestions.map((q, i) => `${i + 1}: ${q.question.substring(0, 50)}...`));
+      
+      // Ensure we have unique questions
+      const uniqueQuestions = generatedQuestions.filter((question, index, self) => 
+        index === self.findIndex(q => q.question === question.question)
+      );
+      
+      if (uniqueQuestions.length !== generatedQuestions.length) {
+        console.warn(`Removed ${generatedQuestions.length - uniqueQuestions.length} duplicate questions`);
+      }
+      
+      setQuestions(uniqueQuestions);
       setCurrentQuestionIndex(0);
       setUserAnswers([]);
       setAppState('questions');
     } catch (error) {
       console.error('Error generating questions:', error);
+      alert('Failed to generate questions. Please try again.');
     }
   };
 
@@ -86,7 +99,7 @@ function App() {
     setAppState('mode-selection');
   };
 
-  const handleCandidateStart = (candidateInfo: any, invitation: InvitationConfig) => {
+  const handleCandidateStart = async (candidateInfo: any, invitation: InvitationConfig) => {
     // Convert invitation to interview config
     const interviewConfig: InterviewConfig = {
       role: invitation.role,
@@ -100,60 +113,88 @@ function App() {
     setConfig(interviewConfig);
     setCurrentInvitation(invitation);
     
-    // Generate questions and start assessment
-    generateQuestions(interviewConfig).then(generatedQuestions => {
+    try {
+      // Generate questions and start assessment
+      console.log('Generating questions for candidate assessment:', interviewConfig);
+      const generatedQuestions = await generateQuestions(interviewConfig);
+      console.log('Generated questions for candidate:', generatedQuestions.length, 'questions');
+      
       setQuestions(generatedQuestions);
       setCurrentQuestionIndex(0);
       setUserAnswers([]);
       setAppState('questions');
-    });
+    } catch (error) {
+      console.error('Error generating questions for candidate:', error);
+      alert('Failed to generate questions. Please try again.');
+    }
   };
 
   const handleAnswer = (answer: string, timeSpent: number) => {
+    const currentQuestion = questions[currentQuestionIndex];
+    if (!currentQuestion) {
+      console.error('No current question found at index:', currentQuestionIndex);
+      return;
+    }
+
     const userAnswer: UserAnswer = {
-      questionId: questions[currentQuestionIndex].id,
+      questionId: currentQuestion.id,
       answer,
       timeSpent
     };
     
-    setUserAnswers(prev => [...prev, userAnswer]);
+    console.log('Answer submitted for question:', currentQuestion.id, 'Answer:', answer.substring(0, 50) + '...');
+    setUserAnswers(prev => {
+      // Remove any existing answer for this question and add the new one
+      const filtered = prev.filter(a => a.questionId !== currentQuestion.id);
+      return [...filtered, userAnswer];
+    });
   };
 
   const handleNext = async () => {
+    console.log('Moving to next question. Current index:', currentQuestionIndex, 'Total questions:', questions.length);
+    
     if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex(prev => prev + 1);
+      const nextIndex = currentQuestionIndex + 1;
+      console.log('Moving to question index:', nextIndex);
+      setCurrentQuestionIndex(nextIndex);
     } else {
       // End of questions
+      console.log('Reached end of questions. Processing results...');
       if (selectedMode === 'mock' || selectedMode === 'evaluate' || currentInvitation) {
-        const evaluationResult = await evaluateAnswers(questions, userAnswers, config!);
-        setResults(evaluationResult);
-        
-        // If this is an invited candidate, save the results
-        if (currentInvitation) {
-          const sessions = JSON.parse(localStorage.getItem('candidate_sessions') || '[]');
-          const session = {
-            invitationId: currentInvitation.id,
-            candidateInfo: {
-              name: 'Candidate', // This would come from candidate form
-              email: currentInvitation.candidateEmail
-            },
-            startedAt: new Date().toISOString(),
-            completedAt: new Date().toISOString(),
-            results: evaluationResult,
-            answers: userAnswers
-          };
-          sessions.push(session);
-          localStorage.setItem('candidate_sessions', JSON.stringify(sessions));
+        try {
+          const evaluationResult = await evaluateAnswers(questions, userAnswers, config!);
+          setResults(evaluationResult);
           
-          // Update invitation status
-          const invitations = JSON.parse(localStorage.getItem('interview_invitations') || '[]');
-          const updatedInvitations = invitations.map((inv: InvitationConfig) =>
-            inv.id === currentInvitation.id ? { ...inv, status: 'completed' } : inv
-          );
-          localStorage.setItem('interview_invitations', JSON.stringify(updatedInvitations));
+          // If this is an invited candidate, save the results
+          if (currentInvitation) {
+            const sessions = JSON.parse(localStorage.getItem('candidate_sessions') || '[]');
+            const session = {
+              invitationId: currentInvitation.id,
+              candidateInfo: {
+                name: 'Candidate', // This would come from candidate form
+                email: currentInvitation.candidateEmail
+              },
+              startedAt: new Date().toISOString(),
+              completedAt: new Date().toISOString(),
+              results: evaluationResult,
+              answers: userAnswers
+            };
+            sessions.push(session);
+            localStorage.setItem('candidate_sessions', JSON.stringify(sessions));
+            
+            // Update invitation status
+            const invitations = JSON.parse(localStorage.getItem('interview_invitations') || '[]');
+            const updatedInvitations = invitations.map((inv: InvitationConfig) =>
+              inv.id === currentInvitation.id ? { ...inv, status: 'completed' } : inv
+            );
+            localStorage.setItem('interview_invitations', JSON.stringify(updatedInvitations));
+          }
+          
+          setAppState('results');
+        } catch (error) {
+          console.error('Error evaluating answers:', error);
+          alert('Failed to evaluate answers. Please try again.');
         }
-        
-        setAppState('results');
       } else {
         // Learn mode - can restart or go back
         setAppState('mode-selection');
@@ -163,7 +204,9 @@ function App() {
 
   const handlePrevious = () => {
     if (currentQuestionIndex > 0) {
-      setCurrentQuestionIndex(prev => prev - 1);
+      const prevIndex = currentQuestionIndex - 1;
+      console.log('Moving to previous question index:', prevIndex);
+      setCurrentQuestionIndex(prevIndex);
     }
   };
 
@@ -194,29 +237,44 @@ function App() {
   };
 
   const handleRestart = () => {
+    console.log('Restarting application');
     setAppState('mode-selection');
     setCurrentQuestionIndex(0);
     setUserAnswers([]);
     setResults(null);
     setCurrentInvitation(null);
+    setQuestions([]);
+    setConfig(null);
   };
 
   const handleHome = () => {
+    console.log('Going home');
     setAppState('mode-selection');
     setCurrentQuestionIndex(0);
     setUserAnswers([]);
     setResults(null);
     setConfig(null);
     setCurrentInvitation(null);
+    setQuestions([]);
   };
 
   const canNavigateNext = () => {
     if (selectedMode === 'learn') return true;
-    const currentAnswer = userAnswers.find(a => a.questionId === questions[currentQuestionIndex]?.id);
+    const currentQuestion = questions[currentQuestionIndex];
+    if (!currentQuestion) return false;
+    const currentAnswer = userAnswers.find(a => a.questionId === currentQuestion.id);
     return !!currentAnswer;
   };
 
   const showHomeButton = appState !== 'mode-selection' && !currentInvitation;
+
+  // Debug logging for current question
+  React.useEffect(() => {
+    if (questions.length > 0 && currentQuestionIndex < questions.length) {
+      const currentQuestion = questions[currentQuestionIndex];
+      console.log(`Current question (${currentQuestionIndex + 1}/${questions.length}):`, currentQuestion.question);
+    }
+  }, [currentQuestionIndex, questions]);
 
   if (authLoading) {
     return (
@@ -352,9 +410,9 @@ function App() {
             </motion.div>
           )}
 
-          {appState === 'questions' && questions.length > 0 && (
+          {appState === 'questions' && questions.length > 0 && currentQuestionIndex < questions.length && (
             <motion.div
-              key="questions"
+              key={`question-${currentQuestionIndex}`}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}

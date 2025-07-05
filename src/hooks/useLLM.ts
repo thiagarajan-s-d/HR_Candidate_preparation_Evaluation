@@ -33,41 +33,49 @@ export const useLLM = () => {
         .map(type => `${type}: ${getQuestionTypeDescription(type)}`)
         .join(', ');
 
-      const prompt = `Generate ${config.numberOfQuestions} interview questions for a ${config.role} position at ${config.company}. 
+      const prompt = `Generate exactly ${config.numberOfQuestions} UNIQUE and DIFFERENT interview questions for a ${config.role} position at ${config.company}. 
       Focus on these skills: ${config.skills.join(', ')}. 
       Proficiency level: ${config.proficiencyLevel}.
       
       Question types to include: ${questionTypesDescription}
       
+      IMPORTANT: Each question must be completely different and unique. Do not repeat or rephrase the same question.
       Distribute questions evenly across the selected question types: ${config.questionTypes.join(', ')}.
       
       For each question, provide:
-      1. The question text
+      1. A unique question text (no duplicates)
       2. The question type (one of: ${config.questionTypes.join(', ')})
-      3. A sample answer
+      3. A comprehensive sample answer
       4. An explanation of what the question tests
       5. Relevant learning resources (as URLs)
       
-      Return ONLY a valid JSON object with this exact structure:
-      {
-        "questions": [
-          {
-            "question": "question text",
-            "type": "question-type",
-            "category": "skill category",
-            "difficulty": "${config.proficiencyLevel}",
-            "answer": "sample answer",
-            "explanation": "explanation text",
-            "links": ["url1", "url2"]
-          }
-        ]
-      }`;
+      Return ONLY a valid JSON array with exactly ${config.numberOfQuestions} question objects:
+      [
+        {
+          "question": "unique question text 1",
+          "type": "question-type",
+          "category": "skill category",
+          "difficulty": "${config.proficiencyLevel}",
+          "answer": "comprehensive sample answer",
+          "explanation": "detailed explanation text",
+          "links": ["https://example.com/resource1", "https://example.com/resource2"]
+        },
+        {
+          "question": "unique question text 2",
+          "type": "question-type",
+          "category": "skill category", 
+          "difficulty": "${config.proficiencyLevel}",
+          "answer": "comprehensive sample answer",
+          "explanation": "detailed explanation text",
+          "links": ["https://example.com/resource3", "https://example.com/resource4"]
+        }
+      ]`;
 
       const completion = await groq.chat.completions.create({
         messages: [
           {
             role: "system",
-            content: "You are an expert technical interviewer. Generate high-quality interview questions with comprehensive answers and explanations. Ensure questions are diverse and match the specified types. You must respond with valid JSON only, no additional text or explanations."
+            content: "You are an expert technical interviewer. Generate high-quality, UNIQUE interview questions with comprehensive answers and explanations. Each question must be completely different from the others. Ensure questions are diverse and match the specified types. You must respond with a valid JSON array only, no additional text or explanations."
           },
           {
             role: "user",
@@ -75,7 +83,7 @@ export const useLLM = () => {
           }
         ],
         model: "meta-llama/llama-4-scout-17b-16e-instruct",
-        temperature: 0.7,
+        temperature: 0.8, // Increased temperature for more variety
         max_tokens: 4000,
         response_format: { type: "json_object" }
       });
@@ -85,35 +93,76 @@ export const useLLM = () => {
         throw new Error('No response from Groq API');
       }
 
+      console.log('Raw API response:', response);
+
       // Parse the JSON response with better error handling
       let questionsData;
       try {
-        questionsData = JSON.parse(response);
+        const parsedResponse = JSON.parse(response);
         
-        // Handle case where response is wrapped in an object
-        if (questionsData.questions && Array.isArray(questionsData.questions)) {
-          questionsData = questionsData.questions;
-        } else if (!Array.isArray(questionsData)) {
-          throw new Error('Response is not an array');
+        // Handle different response formats
+        if (Array.isArray(parsedResponse)) {
+          questionsData = parsedResponse;
+        } else if (parsedResponse.questions && Array.isArray(parsedResponse.questions)) {
+          questionsData = parsedResponse.questions;
+        } else if (parsedResponse.data && Array.isArray(parsedResponse.data)) {
+          questionsData = parsedResponse.data;
+        } else {
+          console.error('Unexpected response format:', parsedResponse);
+          throw new Error('Response is not in expected format');
         }
       } catch (parseError) {
         console.error('JSON parsing error:', parseError);
         console.error('Raw response:', response);
         throw new Error('Invalid JSON response from API');
       }
-      
-      // Transform to our Question format
-      const questions: Question[] = questionsData.map((q: any, index: number) => ({
-        id: `q-${index + 1}`,
-        question: q.question,
-        type: q.type || config.questionTypes[index % config.questionTypes.length],
-        category: q.category || config.skills[index % config.skills.length],
-        difficulty: config.proficiencyLevel,
-        answer: q.answer,
-        explanation: q.explanation,
-        links: q.links || []
-      }));
 
+      // Validate we have the right number of questions
+      if (!Array.isArray(questionsData) || questionsData.length === 0) {
+        console.error('No questions in response:', questionsData);
+        throw new Error('No questions received from API');
+      }
+
+      console.log(`Generated ${questionsData.length} questions:`, questionsData);
+      
+      // Transform to our Question format with unique IDs
+      const questions: Question[] = questionsData.slice(0, config.numberOfQuestions).map((q: any, index: number) => {
+        const question: Question = {
+          id: `q-${Date.now()}-${index}`, // More unique ID generation
+          question: q.question || `Question ${index + 1}: What is your experience with ${config.skills[index % config.skills.length]}?`,
+          type: q.type || config.questionTypes[index % config.questionTypes.length],
+          category: q.category || config.skills[index % config.skills.length],
+          difficulty: config.proficiencyLevel,
+          answer: q.answer || `Sample answer for question ${index + 1}`,
+          explanation: q.explanation || `This question tests your knowledge and experience.`,
+          links: Array.isArray(q.links) ? q.links : []
+        };
+        
+        console.log(`Question ${index + 1}:`, question.question);
+        return question;
+      });
+
+      // Ensure we have exactly the requested number of questions
+      if (questions.length < config.numberOfQuestions) {
+        console.warn(`Only generated ${questions.length} questions, requested ${config.numberOfQuestions}`);
+        // Fill remaining with fallback questions
+        while (questions.length < config.numberOfQuestions) {
+          const index = questions.length;
+          questions.push({
+            id: `q-fallback-${Date.now()}-${index}`,
+            question: `${config.role} question ${index + 1}: Describe your experience with ${config.skills[index % config.skills.length]} and how you would apply it at ${config.company}.`,
+            type: config.questionTypes[index % config.questionTypes.length],
+            category: config.skills[index % config.skills.length],
+            difficulty: config.proficiencyLevel,
+            answer: `A comprehensive answer would cover practical experience, theoretical knowledge, and specific examples of how ${config.skills[index % config.skills.length]} can be applied in a ${config.role} role.`,
+            explanation: `This question evaluates your practical experience and understanding of ${config.skills[index % config.skills.length]}.`,
+            links: []
+          });
+        }
+      }
+
+      console.log(`Final questions array (${questions.length} questions):`, questions.map(q => q.question));
+      
       setLoading(false);
       return questions;
     } catch (error) {
@@ -121,6 +170,7 @@ export const useLLM = () => {
       setLoading(false);
       
       // Fallback to mock questions if API fails
+      console.log('Falling back to mock questions');
       return generateMockQuestions(config);
     }
   };
@@ -220,19 +270,69 @@ export const useLLM = () => {
 
   // Fallback functions for when API fails
   const generateMockQuestions = (config: InterviewConfig): Question[] => {
-    return Array.from({ length: config.numberOfQuestions }, (_, i) => ({
-      id: `q-${i + 1}`,
-      question: `${config.role} interview question ${i + 1} for ${config.company}: What is your experience with ${config.skills[i % config.skills.length]}?`,
-      type: config.questionTypes[i % config.questionTypes.length],
-      category: config.skills[i % config.skills.length],
-      difficulty: config.proficiencyLevel,
-      answer: `Sample answer for ${config.skills[i % config.skills.length]} question. This would typically cover key concepts, practical experience, and best practices.`,
-      explanation: `This question tests your knowledge of ${config.skills[i % config.skills.length]}. Key points to cover include practical experience, theoretical understanding, and real-world applications.`,
-      links: [
-        `https://developer.mozilla.org/en-US/docs/Web/${config.skills[i % config.skills.length].toLowerCase()}`,
-        `https://github.com/topics/${config.skills[i % config.skills.length].toLowerCase()}`
-      ]
-    }));
+    console.log('Generating mock questions as fallback');
+    
+    const mockQuestions = [];
+    
+    for (let i = 0; i < config.numberOfQuestions; i++) {
+      const skillIndex = i % config.skills.length;
+      const typeIndex = i % config.questionTypes.length;
+      const skill = config.skills[skillIndex];
+      const type = config.questionTypes[typeIndex];
+      
+      let questionText = '';
+      let answer = '';
+      let explanation = '';
+      
+      // Generate different questions based on type
+      switch (type) {
+        case 'technical-coding':
+          questionText = `Write a function to solve the following problem using ${skill}: Given an array of integers, find the ${i % 2 === 0 ? 'maximum' : 'minimum'} element and return its index.`;
+          answer = `Here's a solution that iterates through the array once, keeping track of the ${i % 2 === 0 ? 'maximum' : 'minimum'} value and its index. Time complexity: O(n), Space complexity: O(1).`;
+          explanation = `This question tests your ability to write efficient algorithms and understand time/space complexity.`;
+          break;
+          
+        case 'technical-concepts':
+          questionText = `Explain the concept of ${skill} and how it applies to ${config.role} responsibilities. What are the key principles?`;
+          answer = `${skill} is fundamental to ${config.role} work because it enables efficient development and maintainable code architecture.`;
+          explanation = `This question evaluates your theoretical understanding of core concepts.`;
+          break;
+          
+        case 'system-design':
+          questionText = `Design a ${i % 2 === 0 ? 'scalable web application' : 'distributed system'} that handles ${skill}. Consider performance, scalability, and reliability.`;
+          answer = `The system would use microservices architecture with load balancing, caching layers, and database sharding for scalability.`;
+          explanation = `This tests your ability to design large-scale systems and consider trade-offs.`;
+          break;
+          
+        case 'behavioral':
+          questionText = `Tell me about a time when you had to ${i % 2 === 0 ? 'overcome a technical challenge' : 'work with a difficult team member'} while working with ${skill}.`;
+          answer = `I would use the STAR method to describe the Situation, Task, Action, and Result of a specific example.`;
+          explanation = `This evaluates your soft skills and ability to work in team environments.`;
+          break;
+          
+        default:
+          questionText = `How would you approach ${i % 2 === 0 ? 'debugging' : 'optimizing'} a ${config.role} application that uses ${skill}?`;
+          answer = `I would start by identifying the root cause through systematic analysis and then implement targeted solutions.`;
+          explanation = `This tests your problem-solving methodology and practical experience.`;
+      }
+      
+      mockQuestions.push({
+        id: `mock-q-${Date.now()}-${i}`,
+        question: questionText,
+        type: type,
+        category: skill,
+        difficulty: config.proficiencyLevel,
+        answer: answer,
+        explanation: explanation,
+        links: [
+          `https://developer.mozilla.org/en-US/docs/Web/${skill.toLowerCase()}`,
+          `https://github.com/topics/${skill.toLowerCase().replace(/\s+/g, '-')}`
+        ]
+      });
+    }
+    
+    console.log(`Generated ${mockQuestions.length} mock questions:`, mockQuestions.map(q => q.question));
+    return mockQuestions;
   };
 
   const generateMockEvaluation = (

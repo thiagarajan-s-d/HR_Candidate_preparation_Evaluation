@@ -441,6 +441,72 @@ Return a JSON array with this exact structure:
         
         questionText = `Using ${skill}, ${variation} a solution to ${problem}. Provide time and space complexity analysis.`;
         answer = `Here's a solution:\n\n\`\`\`javascript\nfunction solve${index}(input) {\n  // Implementation for ${problem}\n  if (!input || input.length === 0) {\n    return null;\n  }\n  \n  let result = input[0];\n  \n  for (let i = 1; i < input.length; i++) {\n    // Process each element\n    if (input[i] > result) {\n      result = input[i];\n    }\n  }\n  \n  return result;\n}\n\`\`\`\n\n**Time Complexity:** O(n)\n**Space Complexity:** O(1)\n\n**Explanation:**\n• This solution efficiently handles the problem by iterating through the input once\n• We initialize the result with the first element\n• Each subsequent element is compared with the current result\n• The algorithm maintains optimal space usage with constant extra memory`;
+        
+        // Create a more varied coding problem based on index
+        const codingProblems = [
+          {
+            problem: 'implement a function to find the maximum element in an array',
+            code: `function findMaxElement(arr) {
+  if (!arr || arr.length === 0) {
+    return null;
+  }
+  
+  let max = arr[0];
+  
+  for (let i = 1; i < arr.length; i++) {
+    if (arr[i] > max) {
+      max = arr[i];
+    }
+  }
+  
+  return max;
+}`,
+            complexity: 'Time: O(n), Space: O(1)'
+          },
+          {
+            problem: 'reverse a linked list iteratively',
+            code: `function reverseLinkedList(head) {
+  let prev = null;
+  let current = head;
+  
+  while (current !== null) {
+    let next = current.next;
+    current.next = prev;
+    prev = current;
+    current = next;
+  }
+  
+  return prev;
+}`,
+            complexity: 'Time: O(n), Space: O(1)'
+          },
+          {
+            problem: 'implement binary search on a sorted array',
+            code: `function binarySearch(arr, target) {
+  let left = 0;
+  let right = arr.length - 1;
+  
+  while (left <= right) {
+    let mid = Math.floor((left + right) / 2);
+    
+    if (arr[mid] === target) {
+      return mid;
+    } else if (arr[mid] < target) {
+      left = mid + 1;
+    } else {
+      right = mid - 1;
+    }
+  }
+  
+  return -1;
+}`,
+            complexity: 'Time: O(log n), Space: O(1)'
+          }
+        ];
+        
+        const selectedProblem = codingProblems[index % codingProblems.length];
+        questionText = `Using ${skill}, ${selectedProblem.problem}. Provide time and space complexity analysis.`;
+        answer = `Here's a solution:\n\n\`\`\`javascript\n${selectedProblem.code}\n\`\`\`\n\n**Complexity Analysis:**\n${selectedProblem.complexity}\n\n**Explanation:**\n• This solution efficiently handles the problem with optimal time complexity\n• The algorithm uses minimal extra space\n• Each step is clearly documented for maintainability\n• Edge cases are properly handled`;
         explanation = `This question tests your ability to write efficient algorithms and understand complexity analysis.`;
         break;
         

@@ -89,6 +89,14 @@ For technical-concepts: OOP principles, design patterns, data structures, algori
 
 Generate exactly ${config.numberOfQuestions} questions following this distribution. Each question must be completely unique.
 
+CRITICAL CODE FORMATTING RULES:
+- All code blocks must use proper indentation (2 or 4 spaces)
+- Use \\n for line breaks in JSON strings
+- Format code with proper syntax highlighting markers
+- Include language specification: \`\`\`javascript, \`\`\`python, etc.
+- Ensure code is readable and professionally formatted
+- Use consistent indentation throughout code blocks
+
 Return a JSON array with this exact structure:
 [
   {
@@ -432,7 +440,7 @@ Return a JSON array with this exact structure:
         const problem = problems[index % problems.length];
         
         questionText = `Using ${skill}, ${variation} a solution to ${problem}. Provide time and space complexity analysis.`;
-        answer = `Here's a solution:\n\n\`\`\`javascript\nfunction solve${index}(input) {\n  // Implementation for ${problem}\n  if (!input || input.length === 0) {\n    return null;\n  }\n  \n  let result = input[0];\n  \n  for (let i = 1; i < input.length; i++) {\n    // Process each element\n    if (input[i] > result) {\n      result = input[i];\n    }\n  }\n  \n  return result;\n}\n\`\`\`\n\n**Time Complexity:** O(n)\n**Space Complexity:** O(1)\n\nThis solution efficiently handles the problem by iterating through the input once.`;
+        answer = `Here's a solution:\n\n\`\`\`javascript\nfunction solve${index}(input) {\n  // Implementation for ${problem}\n  if (!input || input.length === 0) {\n    return null;\n  }\n  \n  let result = input[0];\n  \n  for (let i = 1; i < input.length; i++) {\n    // Process each element\n    if (input[i] > result) {\n      result = input[i];\n    }\n  }\n  \n  return result;\n}\n\`\`\`\n\n**Time Complexity:** O(n)\n**Space Complexity:** O(1)\n\n**Explanation:**\n• This solution efficiently handles the problem by iterating through the input once\n• We initialize the result with the first element\n• Each subsequent element is compared with the current result\n• The algorithm maintains optimal space usage with constant extra memory`;
         explanation = `This question tests your ability to write efficient algorithms and understand complexity analysis.`;
         break;
         
@@ -450,7 +458,7 @@ Return a JSON array with this exact structure:
         const conceptTopic = concepts[index % concepts.length];
         
         questionText = `${variation.charAt(0).toUpperCase() + variation.slice(1)} the concept of ${conceptTopic} in ${skill}. How does it apply to ${config.role} responsibilities?`;
-        answer = `${conceptTopic.charAt(0).toUpperCase() + conceptTopic.slice(1)} in ${skill}:\n\n**Core Principles:**\n• **Definition:** ${conceptTopic} enables efficient development patterns\n• **Key Benefits:**\n  - Improved code organization\n  - Better maintainability\n  - Enhanced performance\n  - Easier testing and debugging\n\n**Application in ${config.role}:**\n• Used for building scalable applications\n• Helps in creating reusable components\n• Facilitates team collaboration\n• Ensures code quality standards\n\n**Best Practices:**\n• Follow established patterns\n• Write clean, readable code\n• Implement proper error handling\n• Use appropriate design patterns`;
+        answer = `${conceptTopic.charAt(0).toUpperCase() + conceptTopic.slice(1)} in ${skill}:\n\n**Core Principles:**\n• **Definition:** ${conceptTopic} enables efficient development patterns\n• **Key Benefits:**\n  • Improved code organization\n  • Better maintainability\n  • Enhanced performance\n  • Easier testing and debugging\n\n**Application in ${config.role}:**\n• Used for building scalable applications\n• Helps in creating reusable components\n• Facilitates team collaboration\n• Ensures code quality standards\n\n**Implementation Example:**\n\`\`\`javascript\n// Example implementation\nclass ${conceptTopic.replace(/\s+/g, '')}Example {\n  constructor(options) {\n    this.options = options;\n    this.initialize();\n  }\n  \n  initialize() {\n    // Setup logic here\n    console.log('Initializing ${conceptTopic}');\n  }\n  \n  execute() {\n    // Main functionality\n    return this.processData();\n  }\n}\n\`\`\`\n\n**Best Practices:**\n• Follow established patterns\n• Write clean, readable code\n• Implement proper error handling\n• Use appropriate design patterns`;
         explanation = `This question evaluates your theoretical understanding of core concepts and ability to explain technical topics clearly.`;
         break;
         
@@ -468,7 +476,7 @@ Return a JSON array with this exact structure:
         const system = systems[index % systems.length];
         
         questionText = `${variation.charAt(0).toUpperCase() + variation.slice(1)} a scalable ${system} that handles ${skill}. Consider performance, scalability, and reliability.`;
-        answer = `System Design for ${system}:\n\n**Architecture Overview:**\n• **Frontend:** React/Vue.js application with responsive design\n• **API Gateway:** Routes requests and handles authentication\n• **Microservices:** Separate services for different functionalities\n• **Database:** Distributed database with read replicas\n• **Caching:** Redis for session management and data caching\n• **Message Queue:** For asynchronous processing\n\n**Scalability Considerations:**\n• **Horizontal Scaling:** Auto-scaling groups for services\n• **Load Balancing:** Distribute traffic across multiple instances\n• **Database Sharding:** Partition data across multiple databases\n• **CDN:** Content delivery network for static assets\n\n**Reliability Measures:**\n• **Health Checks:** Monitor service availability\n• **Circuit Breakers:** Prevent cascade failures\n• **Backup Strategy:** Regular automated backups\n• **Monitoring:** Comprehensive logging and alerting`;
+        answer = `System Design for ${system}:\n\n**Architecture Overview:**\n\`\`\`\n┌─────────────┐    ┌─────────────┐    ┌─────────────┐\n│   Client    │───▶│ Load Balancer│───▶│ API Gateway │\n└─────────────┘    └─────────────┘    └─────────────┘\n                                              │\n                   ┌──────────────────────────┼──────────────────────────┐\n                   ▼                          ▼                          ▼\n            ┌─────────────┐            ┌─────────────┐            ┌─────────────┐\n            │ Auth Service│            │User Service │            │Data Service │\n            └─────────────┘            └─────────────┘            └─────────────┘\n                   │                          │                          │\n                   ▼                          ▼                          ▼\n            ┌─────────────┐            ┌─────────────┐            ┌─────────────┐\n            │   Redis     │            │  Database   │            │   Cache     │\n            └─────────────┘            └─────────────┘            └─────────────┘\n\`\`\`\n\n**Core Components:**\n• **Frontend:** React/Vue.js application with responsive design\n• **API Gateway:** Routes requests and handles authentication\n• **Microservices:** Separate services for different functionalities\n• **Database:** Distributed database with read replicas\n• **Caching:** Redis for session management and data caching\n• **Message Queue:** For asynchronous processing\n\n**Scalability Considerations:**\n• **Horizontal Scaling:** Auto-scaling groups for services\n• **Load Balancing:** Distribute traffic across multiple instances\n• **Database Sharding:** Partition data across multiple databases\n• **CDN:** Content delivery network for static assets\n\n**Reliability Measures:**\n• **Health Checks:** Monitor service availability\n• **Circuit Breakers:** Prevent cascade failures\n• **Backup Strategy:** Regular automated backups\n• **Monitoring:** Comprehensive logging and alerting`;
         explanation = `This tests your ability to design large-scale systems and consider trade-offs between different architectural decisions.`;
         break;
         

@@ -62,17 +62,17 @@ const getQuestionTypeLabel = (type: QuestionType) => {
 const FormattedText: React.FC<{ text: string }> = ({ text }) => {
   // Convert markdown-style code blocks and formatting
   const formatText = (text: string) => {
-    // Split by code blocks first
-    const parts = text.split(/```(\w+)?\n([\s\S]*?)```/g);
+    // Split by code blocks first - handle both ``` and single backticks
+    const parts = text.split(/```(\w*)\n?([\s\S]*?)```|`([^`]+)`/g);
     const elements = [];
     
     for (let i = 0; i < parts.length; i++) {
-      if (i % 3 === 0) {
+      if (i % 4 === 0) {
         // Regular text part
         const textPart = parts[i];
         if (textPart) {
           // Handle line breaks and bullet points
-          const lines = textPart.split('\n');
+          const lines = textPart.split(/\n/);
           lines.forEach((line, lineIndex) => {
             if (line.trim()) {
               // Handle bold text
@@ -81,15 +81,37 @@ const FormattedText: React.FC<{ text: string }> = ({ text }) => {
                 if (partIndex % 2 === 1) {
                   return <strong key={partIndex}>{part}</strong>;
                 }
-                return part;
+                // Handle inline code
+                const codeFormatted = part.split(/`([^`]+)`/g);
+                return codeFormatted.map((codePart, codeIndex) => {
+                  if (codeIndex % 2 === 1) {
+                    return <code key={codeIndex} className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-red-600">{codePart}</code>;
+                  }
+                  return codePart;
+                });
               });
               
               // Check if it's a bullet point
-              if (line.trim().startsWith('•') || line.trim().startsWith('-')) {
+              if (line.trim().startsWith('•') || line.trim().startsWith('-') || line.trim().startsWith('*')) {
+                elements.push(
+                  <div key={`${i}-${lineIndex}`} className="ml-4 mb-1 flex items-start">
+                    <span className="text-blue-600 mr-2">•</span>
+                    <span>{lineElements}</span>
+                  </div>
+                );
+              } else if (line.trim().match(/^\d+\./)) {
+                // Numbered list
                 elements.push(
                   <div key={`${i}-${lineIndex}`} className="ml-4 mb-1">
                     {lineElements}
                   </div>
+                );
+              } else if (line.trim().startsWith('**') && line.trim().endsWith('**')) {
+                // Section headers
+                elements.push(
+                  <h4 key={`${i}-${lineIndex}`} className="font-semibold text-gray-900 mt-4 mb-2">
+                    {line.trim().replace(/\*\*/g, '')}
+                  </h4>
                 );
               } else {
                 elements.push(
@@ -103,23 +125,109 @@ const FormattedText: React.FC<{ text: string }> = ({ text }) => {
             }
           });
         }
-      } else if (i % 3 === 2) {
+      } else if (i % 4 === 2) {
         // Code block content
-        const language = parts[i - 1] || 'javascript';
+        const language = parts[i - 1]?.toLowerCase() || 'javascript';
         const code = parts[i];
         if (code) {
+          // Format the code with proper indentation
+          const formattedCode = formatCodeBlock(code.trim(), language);
           elements.push(
-            <pre key={`code-${i}`} className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto my-4">
-              <code className={`language-${language}`}>
-                {code.trim()}
+            <div key={`code-${i}`} className="my-4">
+              <div className="bg-gray-800 text-gray-300 px-3 py-1 text-xs font-medium rounded-t-lg border-b border-gray-600">
+                {language || 'code'}
+              </div>
+              <pre className="bg-gray-900 text-gray-100 p-4 rounded-b-lg overflow-x-auto">
+                <code className={`language-${language}`} dangerouslySetInnerHTML={{ __html: formattedCode }}>
+                </code>
+              </pre>
+            </div>
+          );
+        }
+      } else if (i % 4 === 3) {
+        // Inline code content
+        const inlineCode = parts[i];
+        if (inlineCode) {
+          elements.push(
+            <code key={`inline-${i}`} className="bg-gray-100 px-2 py-1 rounded text-sm font-mono text-red-600">
+              {inlineCode}
               </code>
-            </pre>
           );
         }
       }
     }
     
     return elements;
+  };
+
+  // Format code blocks with syntax highlighting and proper indentation
+  const formatCodeBlock = (code: string, language: string): string => {
+    // Basic syntax highlighting for common languages
+    let formattedCode = code;
+    
+    // Ensure proper indentation
+    const lines = code.split('\n');
+    let indentLevel = 0;
+    const indentedLines = lines.map(line => {
+      const trimmedLine = line.trim();
+      
+      // Adjust indent level based on brackets
+      if (trimmedLine.includes('}') || trimmedLine.includes(']') || trimmedLine.includes(')')) {
+        indentLevel = Math.max(0, indentLevel - 1);
+      }
+      
+      const indentedLine = '  '.repeat(indentLevel) + trimmedLine;
+      
+      if (trimmedLine.includes('{') || trimmedLine.includes('[') || trimmedLine.includes('(')) {
+        indentLevel++;
+      }
+      
+      return indentedLine;
+    });
+    
+    formattedCode = indentedLines.join('\n');
+    
+    // Apply basic syntax highlighting
+    if (language === 'javascript' || language === 'js' || language === 'typescript' || language === 'ts') {
+      formattedCode = formattedCode
+        .replace(/\b(function|const|let|var|if|else|for|while|return|class|extends|import|export|from|async|await|try|catch|finally)\b/g, '<span style="color: #569cd6;">$1</span>')
+        .replace(/\b(true|false|null|undefined)\b/g, '<span style="color: #569cd6;">$1</span>')
+        .replace(/\b(\d+)\b/g, '<span style="color: #b5cea8;">$1</span>')
+        .replace(/(\/\/.*$)/gm, '<span style="color: #6a9955;">$1</span>')
+        .replace(/(['"`])((?:(?!\1)[^\\]|\\.)*)(\1)/g, '<span style="color: #ce9178;">$1$2$3</span>');
+    } else if (language === 'python' || language === 'py') {
+      formattedCode = formattedCode
+        .replace(/\b(def|class|if|elif|else|for|while|return|import|from|as|try|except|finally|with|lambda|yield|async|await)\b/g, '<span style="color: #569cd6;">$1</span>')
+        .replace(/\b(True|False|None)\b/g, '<span style="color: #569cd6;">$1</span>')
+        .replace(/\b(\d+)\b/g, '<span style="color: #b5cea8;">$1</span>')
+        .replace(/(#.*$)/gm, '<span style="color: #6a9955;">$1</span>')
+        .replace(/(['"`])((?:(?!\1)[^\\]|\\.)*)(\1)/g, '<span style="color: #ce9178;">$1$2$3</span>');
+    } else if (language === 'java') {
+      formattedCode = formattedCode
+        .replace(/\b(public|private|protected|static|final|class|interface|extends|implements|if|else|for|while|return|try|catch|finally|throw|throws|new|this|super)\b/g, '<span style="color: #569cd6;">$1</span>')
+        .replace(/\b(true|false|null)\b/g, '<span style="color: #569cd6;">$1</span>')
+        .replace(/\b(\d+)\b/g, '<span style="color: #b5cea8;">$1</span>')
+        .replace(/(\/\/.*$)/gm, '<span style="color: #6a9955;">$1</span>')
+        .replace(/(['"`])((?:(?!\1)[^\\]|\\.)*)(\1)/g, '<span style="color: #ce9178;">$1$2$3</span>');
+    } else if (language === 'html') {
+      formattedCode = formattedCode
+        .replace(/(&lt;\/?[^&gt;]+&gt;)/g, '<span style="color: #569cd6;">$1</span>')
+        .replace(/(\w+)=/g, '<span style="color: #92c5f8;">$1</span>=')
+        .replace(/=(['"`])((?:(?!\1)[^\\]|\\.)*)(\1)/g, '=<span style="color: #ce9178;">$1$2$3</span>');
+    } else if (language === 'css') {
+      formattedCode = formattedCode
+        .replace(/([.#]?[\w-]+)\s*{/g, '<span style="color: #d7ba7d;">$1</span> {')
+        .replace(/([\w-]+):/g, '<span style="color: #9cdcfe;">$1</span>:')
+        .replace(/:\s*([^;]+);/g, ': <span style="color: #ce9178;">$1</span>;');
+    } else if (language === 'sql') {
+      formattedCode = formattedCode
+        .replace(/\b(SELECT|FROM|WHERE|JOIN|INNER|LEFT|RIGHT|ON|GROUP|ORDER|BY|HAVING|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TABLE|INDEX|DATABASE)\b/gi, '<span style="color: #569cd6;">$1</span>')
+        .replace(/\b(\d+)\b/g, '<span style="color: #b5cea8;">$1</span>')
+        .replace(/(--.*$)/gm, '<span style="color: #6a9955;">$1</span>')
+        .replace(/(['"`])((?:(?!\1)[^\\]|\\.)*)(\1)/g, '<span style="color: #ce9178;">$1$2$3</span>');
+    }
+    
+    return formattedCode;
   };
 
   return <div className="whitespace-pre-wrap">{formatText(text)}</div>;

@@ -137,9 +137,11 @@ const FormattedText: React.FC<{ text: string }> = ({ text }) => {
               <div className="bg-gray-800 text-gray-300 px-3 py-1 text-xs font-medium rounded-t-lg border-b border-gray-600">
                 {language || 'code'}
               </div>
-              <pre className="bg-gray-900 text-gray-100 p-4 rounded-b-lg overflow-x-auto">
-                <code className={`language-${language}`} dangerouslySetInnerHTML={{ __html: formattedCode }}>
-                </code>
+              <pre className="bg-gray-900 text-gray-100 p-4 rounded-b-lg overflow-x-auto font-mono text-sm leading-relaxed">
+                <code 
+                  className={`language-${language}`} 
+                  dangerouslySetInnerHTML={{ __html: formattedCode }}
+                />
               </pre>
             </div>
           );
@@ -162,8 +164,8 @@ const FormattedText: React.FC<{ text: string }> = ({ text }) => {
 
   // Format code blocks with syntax highlighting and proper indentation
   const formatCodeBlock = (code: string, language: string): string => {
-    // Basic syntax highlighting for common languages
-    let formattedCode = code;
+    // Clean and format the code first
+    let formattedCode = code.trim();
     
     // Ensure proper indentation
     const lines = code.split('\n');
@@ -187,7 +189,12 @@ const FormattedText: React.FC<{ text: string }> = ({ text }) => {
     
     formattedCode = indentedLines.join('\n');
     
-    // Apply basic syntax highlighting
+    // Apply basic syntax highlighting with proper HTML escaping
+    formattedCode = formattedCode
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    
     if (language === 'javascript' || language === 'js' || language === 'typescript' || language === 'ts') {
       formattedCode = formattedCode
         .replace(/\b(function|const|let|var|if|else|for|while|return|class|extends|import|export|from|async|await|try|catch|finally)\b/g, '<span style="color: #569cd6;">$1</span>')

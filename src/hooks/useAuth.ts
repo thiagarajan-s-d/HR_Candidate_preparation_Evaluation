@@ -1,246 +1,127 @@
 import { useState, useEffect } from 'react';
 import { User } from '../types';
-import { supabase } from '../lib/supabase';
-import type { User as SupabaseUser } from '@supabase/supabase-js';
+import { ApiErrorHandler, apiCall } from '../lib/apiErrorHandler';
 
 export const useAuth = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let mounted = true;
-
-    // Get initial session
-    const getInitialSession = async () => {
+    // Check if user and token are stored in localStorage
+    const storedUser = localStorage.getItem('auth_user');
+    const storedToken = localStorage.getItem('auth_token');
+    
+    if (storedUser && storedToken) {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (!mounted) return;
-        
-        if (error) {
-          console.error('Error getting session:', error);
-          setLoading(false);
-          return;
-        }
-
-        if (session?.user) {
-          console.log('Found existing session for:', session.user.email);
-          await loadUserProfile(session.user);
-        } else {
-          console.log('No existing session found');
-          setLoading(false);
-        }
+        setUser(JSON.parse(storedUser));
       } catch (error) {
-        console.error('Error in getInitialSession:', error);
-        if (mounted) setLoading(false);
+        localStorage.removeItem('auth_user');
+        localStorage.removeItem('auth_token');
       }
-    };
-
-    getInitialSession();
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mounted) return;
-      
-      console.log('Auth state changed:', event, session?.user?.email);
-      
-      if (event === 'SIGNED_IN' && session?.user) {
-        console.log('User signed in, loading profile...');
-        await loadUserProfile(session.user);
-      } else if (event === 'SIGNED_OUT') {
-        console.log('User signed out');
-        setUser(null);
-        setLoading(false);
-      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-        console.log('Token refreshed');
-        // Don't reload profile on token refresh if we already have user data
-        if (!user) {
-          await loadUserProfile(session.user);
-        } else {
-          setLoading(false);
-        }
-      } else {
-        setLoading(false);
-      }
-    });
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, []); // Remove user dependency to prevent infinite loops
-
-  const loadUserProfile = async (supabaseUser: SupabaseUser) => {
-    try {
-      console.log('Loading profile for user:', supabaseUser.id);
-      
-      // First, check if profile exists
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', supabaseUser.id)
-        .single();
-
-      if (error) {
-        console.error('Error loading profile:', error);
-        
-        // If profile doesn't exist, create it
-        if (error.code === 'PGRST116') {
-          console.log('Profile not found, creating new profile...');
-          await createUserProfile(supabaseUser);
-          return;
-        }
-        
-        // For other errors, still set loading to false
-        setLoading(false);
-        return;
-      }
-
-      if (profile) {
-        const user: User = {
-          id: profile.id,
-          email: profile.email,
-          name: profile.name || undefined
-        };
-        setUser(user);
-        console.log('User profile loaded successfully:', user);
-      }
-      
-      setLoading(false);
-    } catch (error) {
-      console.error('Error in loadUserProfile:', error);
-      setLoading(false);
     }
-  };
+    setLoading(false);
+  }, []);
 
-  const createUserProfile = async (supabaseUser: SupabaseUser) => {
-    try {
-      console.log('Creating profile for user:', supabaseUser.id);
-      
-      const profileData = {
-        id: supabaseUser.id,
-        email: supabaseUser.email!,
-        name: supabaseUser.user_metadata?.name || '',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .insert(profileData)
-        .select()
-        .single();
-
-      if (error) {
-        console.error('Error creating profile:', error);
-        setLoading(false);
-        return;
-      }
-
-      if (profile) {
-        const user: User = {
-          id: profile.id,
-          email: profile.email,
-          name: profile.name || undefined
-        };
-        setUser(user);
-        console.log('User profile created successfully:', user);
-      }
-      
-      setLoading(false);
-    } catch (error) {
-      console.error('Error in createUserProfile:', error);
-      setLoading(false);
-    }
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('auth_token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
   };
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     if (!email.trim() || !password.trim()) {
-      console.log('Login failed: empty email or password');
       return { success: false, error: 'Email and password are required.' };
     }
 
     try {
-      console.log('Attempting login for:', email);
-      
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password: password
-      });
+      const result = await apiCall(
+        async () => {
+          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+          const response = await fetch(`${apiUrl}/auth/login`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email: email.trim(), password }),
+          });
 
-      if (error) {
-        console.error('Login error:', error.message);
-        return { success: false, error: error.message };
-      }
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Login failed');
+          }
 
-      if (data.user && data.session) {
-        console.log('Login successful for:', data.user.email);
-        // Profile will be loaded by the auth state change listener
-        return { success: true };
-      }
+          const data = await response.json();
+          
+          if (data.user && data.token) {
+            const user: User = {
+              id: data.user.id,
+              email: data.user.email,
+              name: data.user.name || undefined
+            };
+            
+            setUser(user);
+            localStorage.setItem('auth_user', JSON.stringify(user));
+            localStorage.setItem('auth_token', data.token);
+            return { success: true };
+          }
 
-      return { success: false, error: 'Login failed. Please try again.' };
+          throw new Error('Login failed. Please try again.');
+        },
+        'user-login',
+        { maxRetries: 2 }
+      );
+
+      return result;
     } catch (error) {
-      console.error('Login error:', error);
-      return { success: false, error: 'An unexpected error occurred. Please try again.' };
+      const errorInfo = ApiErrorHandler.categorizeError(error as Error);
+      return { success: false, error: errorInfo.userMessage };
     }
   };
 
   const register = async (email: string, password: string, name: string): Promise<{ success: boolean; error?: string }> => {
     if (!email.trim() || !password.trim() || !name.trim()) {
-      console.log('Registration failed: missing required fields');
       return { success: false, error: 'All fields are required.' };
     }
 
     if (password.length < 6) {
-      console.log('Registration failed: password too short');
       return { success: false, error: 'Password must be at least 6 characters long.' };
     }
 
     try {
-      console.log('Attempting registration for:', email);
-      
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password: password,
-        options: {
-          data: {
-            name: name.trim()
+      const result = await apiCall(
+        async () => {
+          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+          const response = await fetch(`${apiUrl}/auth/register`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email: email.trim(), password, name: name.trim() }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Registration failed');
           }
-        }
-      });
 
-      if (error) {
-        console.error('Registration error:', error.message);
-        return { success: false, error: error.message };
-      }
+          const data = await response.json();
+          
+          // Registration successful - don't auto-login for security
+          return { success: true };
+        },
+        'user-registration',
+        { maxRetries: 2 }
+      );
 
-      if (data.user) {
-        console.log('Registration successful for:', data.user.email);
-        
-        // If user is immediately confirmed, profile will be created by trigger or auth listener
-        return { success: true };
-      }
-
-      return { success: false, error: 'Registration failed. Please try again.' };
+      return result;
     } catch (error) {
-      console.error('Registration error:', error);
-      return { success: false, error: 'An unexpected error occurred. Please try again.' };
+      const errorInfo = ApiErrorHandler.categorizeError(error as Error);
+      return { success: false, error: errorInfo.userMessage };
     }
   };
 
   const logout = async () => {
-    console.log('Logging out user');
-    
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error('Logout error:', error);
-      }
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
-    
+    localStorage.removeItem('auth_user');
+    localStorage.removeItem('auth_token');
     setUser(null);
     setLoading(false);
   };
@@ -249,58 +130,57 @@ export const useAuth = () => {
     if (!user) return false;
 
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
-
-      if (error) {
-        console.error('Profile update error:', error);
-        return false;
-      }
-
-      // Update local user state
-      setUser(prev => prev ? { ...prev, ...updates } : null);
+      // For now, just update locally. In a full implementation, you'd call an API
+      const updatedUser = { ...user, ...updates };
+      setUser(updatedUser);
+      localStorage.setItem('auth_user', JSON.stringify(updatedUser));
       return true;
     } catch (error) {
-      console.error('Profile update error:', error);
+      ApiErrorHandler.logError(error as Error, 'update-user-profile');
       return false;
     }
   };
 
   const getAllUsers = async (): Promise<User[]> => {
     try {
-      const { data: profiles, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+      return await apiCall(
+        async () => {
+          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+          const response = await fetch(`${apiUrl}/users`, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              ...getAuthHeaders()
+            } as HeadersInit,
+          });
 
-      if (error) {
-        console.error('Error fetching users:', error);
-        return [];
-      }
+          if (!response.ok) {
+            throw new Error('Failed to fetch users');
+          }
 
-      return profiles.map(profile => ({
-        id: profile.id,
-        email: profile.email,
-        name: profile.name || undefined
-      }));
+          const data = await response.json();
+          return data.users || [];
+        },
+        'get-all-users',
+        { maxRetries: 2 }
+      );
     } catch (error) {
-      console.error('Error fetching users:', error);
+      ApiErrorHandler.logError(error as Error, 'get-all-users');
       return [];
     }
   };
 
-  return { 
-    user, 
-    login, 
-    register, 
-    logout, 
-    loading, 
+  const isAuthenticated = !!user && !!localStorage.getItem('auth_token');
+
+  return {
+    user,
+    loading,
+    login,
+    register,
+    logout,
     updateProfile,
-    getAllUsers
+    getAllUsers,
+    getAuthHeaders,
+    isAuthenticated
   };
 };

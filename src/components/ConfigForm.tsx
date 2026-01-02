@@ -69,9 +69,9 @@ const getIcon = (iconName: string) => {
 
 export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onSubmit, loading }) => {
   const [config, setConfig] = useState<InterviewConfig>({
-    role: '',
-    company: '',
-    skills: [],
+    role: 'Senior Software Engineer',
+    company: 'Google',
+    skills: ['React', 'JavaScript', 'Node.js'],
     proficiencyLevel: 'intermediate',
     numberOfQuestions: mode === 'evaluate' ? 25 : 10,
     questionTypes: ['technical-coding', 'technical-concepts']
@@ -138,7 +138,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({ mode, onSubmit, loading 
         Configure Your {mode.charAt(0).toUpperCase() + mode.slice(1)} Session
       </h2>
       
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-6" noValidate>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">

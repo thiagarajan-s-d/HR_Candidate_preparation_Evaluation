@@ -154,9 +154,9 @@ export const UserProfile: React.FC<UserProfileProps> = ({
 
         <div className="mt-6 pt-6 border-t border-gray-200">
           <div className="bg-blue-50 p-4 rounded-lg">
-            <h3 className="font-semibold text-blue-900 mb-2">Supabase Integration</h3>
+            <h3 className="font-semibold text-blue-900 mb-2">Database Integration</h3>
             <p className="text-sm text-blue-800">
-              Your data is now securely stored in Supabase with proper authentication and real-time capabilities.
+              Your data is now securely stored in PostgreSQL with proper authentication and real-time capabilities.
             </p>
           </div>
         </div>

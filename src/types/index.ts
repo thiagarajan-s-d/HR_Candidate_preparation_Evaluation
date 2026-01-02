@@ -30,6 +30,13 @@ export interface UserAnswer {
   timeSpent: number;
 }
 
+export interface QuestionResult {
+  question: Question;
+  userAnswer: UserAnswer | undefined;
+  score: number;
+  category: 'correct' | 'incorrect' | 'partially-correct' | 'unanswered';
+}
+
 export interface EvaluationResult {
   score: number;
   totalQuestions: number;
@@ -38,6 +45,12 @@ export interface EvaluationResult {
   typeScores: Record<string, number>;
   feedback: string;
   recommendations: string[];
+  questionBreakdown?: {
+    correct: QuestionResult[];
+    incorrect: QuestionResult[];
+    partiallyCorrect: QuestionResult[];
+    unanswered: QuestionResult[];
+  };
 }
 
 export interface InvitationConfig {

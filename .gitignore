@@ -1,25 +1,257 @@
-# Logs
-logs
-*.log
+# =============================================================================
+# SECURITY - CREDENTIALS AND SENSITIVE DATA
+# =============================================================================
+
+# Environment files containing secrets
+.env
+.env.*
+!.env.example
+!.env.production.template
+
+# API Keys and Tokens
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+api-keys.json
+secrets.json
+credentials.json
+config/secrets.*
+config/credentials.*
+
+# Database credentials and connection strings
+database.json
+db-config.json
+connection-strings.*
+
+# Authentication and session files
+auth-config.*
+session-secrets.*
+jwt-secrets.*
+oauth-config.*
+
+# Cloud provider credentials
+.aws/
+.gcp/
+.azure/
+gcloud-service-key.json
+aws-credentials.*
+azure-credentials.*
+
+# SSH and GPG keys
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+*.ppk
+*.gpg
+*.asc
+
+# =============================================================================
+# BUILD AND DEPENDENCIES
+# =============================================================================
+
+# Dependencies
+node_modules/
+*/node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+.pnpm-store/
 
-node_modules
-dist
-dist-ssr
+# Build outputs
+dist/
+dist-ssr/
+build/
+out/
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+.vite/
+
+# =============================================================================
+# LOGS AND TEMPORARY FILES
+# =============================================================================
+
+# Application logs
+logs/
+*.log
+*.log.*
+log-*.txt
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# =============================================================================
+# DEVELOPMENT AND TESTING
+# =============================================================================
+
+# Testing
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+test-report/
+
+# Local development
 *.local
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
-# Editor directories and files
+# =============================================================================
+# EDITOR AND IDE FILES
+# =============================================================================
+
+# VSCode
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# JetBrains IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Other editors
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-.env
+.project
+.classpath
+.settings/
+
+# =============================================================================
+# OPERATING SYSTEM FILES
+# =============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+
+# =============================================================================
+# BACKUP AND ARCHIVE FILES
+# =============================================================================
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+*.save
+backup/
+backups/
+
+# Archive files (if they might contain sensitive data)
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+# =============================================================================
+# DATABASE FILES
+# =============================================================================
+
+# SQLite databases
+*.sqlite
+*.sqlite3
+*.db
+
+# Database dumps
+*.sql.gz
+*.dump
+database-backup.*
+db-dump.*
+
+# =============================================================================
+# RUNTIME AND PROCESS FILES
+# =============================================================================
+
+# Process IDs
+*.pid
+*.seed
+*.pid.lock
+
+# Runtime data
+pids/
+lib-cov/
+.grunt/
+.lock-wscript/
+
+# =============================================================================
+# PACKAGE MANAGER FILES
+# =============================================================================
+
+# npm
+.npm/
+.npmrc
+npm-shrinkwrap.json
+
+# Yarn
+.yarn/
+.yarnrc
+yarn.lock
+
+# pnpm
+.pnpm-debug.log*
+
+# =============================================================================
+# MISCELLANEOUS
+# =============================================================================
+
+# Optional eslint cache
+.eslintcache
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env.test
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test/
+
+# Temporary folders
+tmp/
+temp/

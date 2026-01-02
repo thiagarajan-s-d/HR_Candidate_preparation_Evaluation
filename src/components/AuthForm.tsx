@@ -6,9 +6,10 @@ interface AuthFormProps {
   onLogin: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   onRegister: (email: string, password: string, name: string) => Promise<{ success: boolean; error?: string }>;
   loading: boolean;
+  onSuccess?: () => void;
 }
 
-export const AuthForm: React.FC<AuthFormProps> = ({ onLogin, onRegister, loading }) => {
+export const AuthForm: React.FC<AuthFormProps> = ({ onLogin, onRegister, loading, onSuccess }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -23,7 +24,9 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onLogin, onRegister, loading
       return false;
     }
     
-    if (!email.includes('@') || !email.includes('.')) {
+    // More comprehensive email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
       setError('Please enter a valid email address.');
       return false;
     }
@@ -75,6 +78,10 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onLogin, onRegister, loading
         setPassword('');
         setName('');
         setError('');
+        // Call success callback to navigate to home
+        if (onSuccess) {
+          onSuccess();
+        }
       }
     } catch (error) {
       console.error('Auth error:', error);
@@ -124,7 +131,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onLogin, onRegister, loading
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         {!isLogin && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -238,7 +245,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onLogin, onRegister, loading
       </div>
 
       <div className="mt-4 text-center text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
-        <p><strong>Supabase Integration:</strong> Your data is securely stored with proper authentication</p>
+        <p><strong>Secure Storage:</strong> Your data is securely stored with proper authentication</p>
         <p>Create an account with any email and a 6+ character password</p>
       </div>
     </motion.div>

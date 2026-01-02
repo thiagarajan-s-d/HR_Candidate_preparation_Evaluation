@@ -10,10 +10,10 @@ interface CandidateViewProps {
 
 export const CandidateView: React.FC<CandidateViewProps> = ({ invitation, onStart }) => {
   const [candidateInfo, setCandidateInfo] = useState({
-    name: invitation.candidateName || '',
+    name: invitation.candidateName || 'Test Candidate',
     email: invitation.candidateEmail,
-    phone: '',
-    experience: ''
+    phone: '+1-555-0123',
+    experience: '3-5'
   });
   const [hasStarted, setHasStarted] = useState(false);
 

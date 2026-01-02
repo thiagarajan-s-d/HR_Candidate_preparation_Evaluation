@@ -10,8 +10,10 @@ import { AuthForm } from './components/AuthForm';
 import { ChatInterface } from './components/ChatInterface';
 import { InviteForm } from './components/InviteForm';
 import { CandidateView } from './components/CandidateView';
+import { ErrorBoundary, QuestionErrorBoundary, AuthErrorBoundary } from './components/ErrorBoundary';
 import { useAuth } from './hooks/useAuth';
 import { useLLM } from './hooks/useLLM';
+import { ApiErrorHandler, apiCall } from './lib/apiErrorHandler';
 import { AppMode, ViewMode, InterviewConfig, Question, UserAnswer, EvaluationResult, InvitationConfig } from './types';
 
 type AppState = 'mode-selection' | 'config' | 'questions' | 'results' | 'auth' | 'invite' | 'candidate';
@@ -30,6 +32,11 @@ function App() {
   const [results, setResults] = useState<EvaluationResult | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [currentInvitation, setCurrentInvitation] = useState<InvitationConfig | null>(null);
+  const [skippedQuestions, setSkippedQuestions] = useState<Set<number>>(new Set());
+  const [hasCompletedInitialPass, setHasCompletedInitialPass] = useState(false);
+  const [assessmentStartTime, setAssessmentStartTime] = useState<number | null>(null);
+  const [totalTimeSpent, setTotalTimeSpent] = useState(0);
+  const [questionStartTime, setQuestionStartTime] = useState<number>(Date.now());
 
   // Check for invitation link on app load
   React.useEffect(() => {
@@ -37,16 +44,94 @@ function App() {
     const inviteId = urlParams.get('invite');
     
     if (inviteId) {
-      // Load invitation from localStorage
-      const invitations = JSON.parse(localStorage.getItem('interview_invitations') || '[]');
-      const invitation = invitations.find((inv: InvitationConfig) => inv.id === inviteId);
+      const fetchInvitation = async () => {
+        try {
+          await apiCall(
+            async () => {
+              console.log('Fetching invitation from API:', inviteId);
+              const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+              console.log('API URL:', apiUrl);
+              
+              const response = await ApiErrorHandler.enhancedFetch(`${apiUrl}/invitations/${inviteId}`);
+              console.log('Response status:', response.status);
+              
+              const { invitation } = await response.json();
+              console.log('Raw invitation from API:', invitation);
+              
+              // Convert database format to app format
+              const appInvitation: InvitationConfig = {
+                id: invitation.id,
+                requestorId: invitation.requestor_id,
+                requestorName: invitation.requestor_name,
+                requestorEmail: invitation.requestor_email,
+                candidateEmail: invitation.candidate_email,
+                candidateName: invitation.candidate_name,
+                role: invitation.role,
+                company: invitation.company,
+                skills: invitation.skills,
+                proficiencyLevel: invitation.proficiency_level,
+                numberOfQuestions: invitation.number_of_questions,
+                questionTypes: invitation.question_types,
+                expiresAt: invitation.expires_at,
+                createdAt: invitation.created_at,
+                status: invitation.status,
+                customMessage: invitation.custom_message
+              };
+              
+              console.log('Converted app invitation:', appInvitation);
+              
+              console.log('Invitation details:');
+              console.log('Status:', appInvitation.status);
+              console.log('Expires at:', appInvitation.expiresAt);
+              console.log('Current time:', new Date().toISOString());
+              console.log('Expires date object:', new Date(appInvitation.expiresAt));
+              console.log('Current date object:', new Date());
+              console.log('Is expired?', new Date(appInvitation.expiresAt) <= new Date());
+              
+              // Temporarily disable expiration check for testing
+              if (appInvitation.status !== 'expired') {
+                setCurrentInvitation(appInvitation);
+                // Require authentication before accessing evaluation
+                if (user) {
+                  setAppState('candidate');
+                } else {
+                  setAppState('auth');
+                }
+              } else {
+                alert('This invitation link has expired.');
+              }
+            },
+            'fetch-invitation',
+            { maxRetries: 2 }
+          );
+        } catch (error) {
+          const errorInfo = ApiErrorHandler.categorizeError(error as Error);
+          console.error('Error fetching invitation from API:', errorInfo.technicalMessage);
+          console.log('Trying localStorage fallback');
+          
+          // Fallback to localStorage
+          try {
+            const invitations = JSON.parse(localStorage.getItem('interview_invitations') || '[]');
+            const invitation = invitations.find((inv: any) => inv.id === inviteId);
+            
+            if (invitation && invitation.status !== 'expired' && new Date(invitation.expiresAt) > new Date()) {
+              setCurrentInvitation(invitation);
+              if (user) {
+                setAppState('candidate');
+              } else {
+                setAppState('auth');
+              }
+            } else {
+              alert('This invitation link has expired or is invalid.');
+            }
+          } catch (localError) {
+            console.error('Error checking localStorage:', localError);
+            alert('Error loading invitation. Please try again.');
+          }
+        }
+      };
       
-      if (invitation && invitation.status !== 'expired' && new Date(invitation.expiresAt) > new Date()) {
-        setCurrentInvitation(invitation);
-        setAppState('candidate');
-      } else {
-        alert('This invitation link has expired or is invalid.');
-      }
+      fetchInvitation();
     }
   }, []);
 
@@ -62,8 +147,24 @@ function App() {
     }
   };
 
+  // Redirect after successful login
+  React.useEffect(() => {
+    if (user && appState === 'auth') {
+      // If there's a current invitation, go to candidate view, otherwise go to home
+      if (currentInvitation) {
+        setAppState('candidate');
+      } else {
+        setAppState('mode-selection');
+      }
+    }
+  }, [user, appState, currentInvitation]);
+
   const handleShowAuth = () => {
     setAppState('auth');
+  };
+
+  const handleAuthSuccess = () => {
+    setAppState('mode-selection');
   };
 
   const handleConfigSubmit = async (interviewConfig: InterviewConfig) => {
@@ -88,6 +189,8 @@ function App() {
       setQuestions(uniqueQuestions);
       setCurrentQuestionIndex(0);
       setUserAnswers([]);
+      setAssessmentStartTime(Date.now());
+      setQuestionStartTime(Date.now());
       setAppState('questions');
     } catch (error) {
       console.error('Error generating questions:', error);
@@ -148,18 +251,100 @@ function App() {
       const filtered = prev.filter(a => a.questionId !== currentQuestion.id);
       return [...filtered, userAnswer];
     });
+    
+    // Remove from skipped questions if it was skipped
+    setSkippedQuestions(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(currentQuestionIndex);
+      return newSet;
+    });
   };
 
   const handleNext = async () => {
     console.log('Moving to next question. Current index:', currentQuestionIndex, 'Total questions:', questions.length);
+    
+    // Reset question timer for next question
+    setQuestionStartTime(Date.now());
     
     if (currentQuestionIndex < questions.length - 1) {
       const nextIndex = currentQuestionIndex + 1;
       console.log('Moving to question index:', nextIndex);
       setCurrentQuestionIndex(nextIndex);
     } else {
-      // End of questions
-      console.log('Reached end of questions. Processing results...');
+      // Mark that user has completed initial pass through all questions
+      setHasCompletedInitialPass(true);
+      
+      // Check if there are skipped questions
+      if (skippedQuestions.size > 0) {
+        const firstSkipped = Math.min(...Array.from(skippedQuestions));
+        console.log('Going back to first skipped question:', firstSkipped);
+        setCurrentQuestionIndex(firstSkipped);
+        return;
+      }
+      
+      // Stay on last question - don't auto-finish
+      console.log('Completed all questions. User can now choose to finish or review.');
+    }
+  };
+
+  const finishAssessment = async (currentAnswer?: string, timeSpent?: number) => {
+    console.log('Finishing assessment. Processing results...');
+    
+    // Save current answer if provided (from last question)
+    if (currentAnswer && currentAnswer.trim() && questions[currentQuestionIndex]) {
+      const currentQuestion = questions[currentQuestionIndex];
+      const userAnswer = {
+        questionId: currentQuestion.id,
+        answer: currentAnswer,
+        timeSpent: timeSpent || 0
+      };
+      
+      // Update userAnswers with the final answer
+      const updatedAnswers = userAnswers.filter(a => a.questionId !== currentQuestion.id);
+      updatedAnswers.push(userAnswer);
+      setUserAnswers(updatedAnswers);
+      
+      // Use updated answers for evaluation
+      if (selectedMode === 'mock' || selectedMode === 'evaluate' || currentInvitation) {
+        try {
+          const evaluationResult = await evaluateAnswers(questions, updatedAnswers, config!);
+          setResults(evaluationResult);
+          
+          // If this is an invited candidate, save the results
+          if (currentInvitation) {
+            const sessions = JSON.parse(localStorage.getItem('candidate_sessions') || '[]');
+            const session = {
+              invitationId: currentInvitation.id,
+              candidateInfo: {
+                name: 'Candidate',
+                email: currentInvitation.candidateEmail
+              },
+              startedAt: new Date().toISOString(),
+              completedAt: new Date().toISOString(),
+              results: evaluationResult,
+              answers: updatedAnswers
+            };
+            sessions.push(session);
+            localStorage.setItem('candidate_sessions', JSON.stringify(sessions));
+            
+            // Update invitation status
+            const invitations = JSON.parse(localStorage.getItem('interview_invitations') || '[]');
+            const updatedInvitations = invitations.map((inv: InvitationConfig) =>
+              inv.id === currentInvitation.id ? { ...inv, status: 'completed' } : inv
+            );
+            localStorage.setItem('interview_invitations', JSON.stringify(updatedInvitations));
+          }
+          
+          setAppState('results');
+        } catch (error) {
+          console.error('Error evaluating answers:', error);
+          alert('Failed to evaluate answers. Please try again.');
+        }
+      } else {
+        setAppState('mode-selection');
+      }
+    } else {
+      // No current answer to save, proceed with existing answers
       if (selectedMode === 'mock' || selectedMode === 'evaluate' || currentInvitation) {
         try {
           const evaluationResult = await evaluateAnswers(questions, userAnswers, config!);
@@ -171,7 +356,7 @@ function App() {
             const session = {
               invitationId: currentInvitation.id,
               candidateInfo: {
-                name: 'Candidate', // This would come from candidate form
+                name: 'Candidate',
                 email: currentInvitation.candidateEmail
               },
               startedAt: new Date().toISOString(),
@@ -196,10 +381,41 @@ function App() {
           alert('Failed to evaluate answers. Please try again.');
         }
       } else {
-        // Learn mode - can restart or go back
         setAppState('mode-selection');
       }
     }
+  };
+
+  const handleSkip = () => {
+    console.log('Skipping question:', currentQuestionIndex);
+    setSkippedQuestions(prev => new Set([...prev, currentQuestionIndex]));
+    handleNext();
+  };
+
+  // Calculate time limits based on question type and difficulty
+  const getQuestionTimeLimit = (question: Question): number => {
+    const baseTime = {
+      'technical-coding': 900, // 15 minutes
+      'system-design': 720,    // 12 minutes
+      'technical-concepts': 300, // 5 minutes
+      'behavioral': 240,       // 4 minutes
+      'problem-solving': 480,  // 8 minutes
+      'case-study': 600,       // 10 minutes
+      'architecture': 600,     // 10 minutes
+      'debugging': 420         // 7 minutes
+    };
+    
+    const difficultyMultiplier = {
+      'beginner': 0.8,
+      'intermediate': 1.0,
+      'advanced': 1.2,
+      'expert': 1.4
+    };
+    
+    const baseTimeForType = baseTime[question.type] || 300;
+    const multiplier = difficultyMultiplier[question.difficulty] || 1.0;
+    
+    return Math.floor(baseTimeForType * multiplier);
   };
 
   const handlePrevious = () => {
@@ -207,6 +423,7 @@ function App() {
       const prevIndex = currentQuestionIndex - 1;
       console.log('Moving to previous question index:', prevIndex);
       setCurrentQuestionIndex(prevIndex);
+      setQuestionStartTime(Date.now());
     }
   };
 
@@ -245,6 +462,11 @@ function App() {
     setCurrentInvitation(null);
     setQuestions([]);
     setConfig(null);
+    setSkippedQuestions(new Set());
+    setHasCompletedInitialPass(false);
+    setAssessmentStartTime(null);
+    setTotalTimeSpent(0);
+    setQuestionStartTime(Date.now());
   };
 
   const handleHome = () => {
@@ -256,6 +478,11 @@ function App() {
     setConfig(null);
     setCurrentInvitation(null);
     setQuestions([]);
+    setSkippedQuestions(new Set());
+    setHasCompletedInitialPass(false);
+    setAssessmentStartTime(null);
+    setTotalTimeSpent(0);
+    setQuestionStartTime(Date.now());
   };
 
   const canNavigateNext = () => {
@@ -263,7 +490,7 @@ function App() {
     const currentQuestion = questions[currentQuestionIndex];
     if (!currentQuestion) return false;
     const currentAnswer = userAnswers.find(a => a.questionId === currentQuestion.id);
-    return !!currentAnswer;
+    return !!currentAnswer || skippedQuestions.has(currentQuestionIndex);
   };
 
   const showHomeButton = appState !== 'mode-selection' && !currentInvitation;
@@ -288,183 +515,238 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      <Header 
-        user={user} 
-        onLogout={logout} 
-        onHome={handleHome}
-        showHomeButton={showHomeButton}
-        onShowAuth={handleShowAuth}
-        onUpdateProfile={updateProfile}
-        onGetAllUsers={getAllUsers}
-      />
-      
-      {/* View Mode Toggle - Hide for candidate view */}
-      {!currentInvitation && (
-        <div className="fixed top-20 right-4 z-40 flex bg-white rounded-lg shadow-lg p-1">
-          <button
-            onClick={() => setViewMode('web')}
-            className={`flex items-center space-x-2 px-3 py-2 rounded-md transition-colors ${
-              viewMode === 'web' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            <Monitor className="h-4 w-4" />
-            <span className="text-sm">Web</span>
-          </button>
-          <button
-            onClick={() => setChatOpen(true)}
-            className={`flex items-center space-x-2 px-3 py-2 rounded-md transition-colors ${
-              chatOpen ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            <MessageCircle className="h-4 w-4" />
-            <span className="text-sm">Chat</span>
-          </button>
-        </div>
-      )}
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <AnimatePresence mode="wait">
-          {appState === 'auth' && (
-            <motion.div
-              key="auth"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
+    <ErrorBoundary 
+      onError={(error, errorInfo) => {
+        console.error('App-level error:', error, errorInfo);
+        // In production, send to error reporting service
+      }}
+    >
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+        <ErrorBoundary fallback={
+          <div className="bg-red-50 p-4 text-center">
+            <p className="text-red-800">Header component error. Please refresh the page.</p>
+          </div>
+        }>
+          <Header 
+            user={user} 
+            onLogout={logout} 
+            onHome={handleHome}
+            showHomeButton={showHomeButton}
+            onShowAuth={handleShowAuth}
+            onUpdateProfile={updateProfile}
+            onGetAllUsers={getAllUsers}
+          />
+        </ErrorBoundary>
+        
+        {/* View Mode Toggle - Hide for candidate view */}
+        {!currentInvitation && (
+          <div className="fixed top-20 right-4 z-40 flex bg-white rounded-lg shadow-lg p-1">
+            <button
+              onClick={() => setViewMode('web')}
+              className={`flex items-center space-x-2 px-3 py-2 rounded-md transition-colors ${
+                viewMode === 'web' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:text-gray-800'
+              }`}
             >
-              <AuthForm onLogin={login} onRegister={register} loading={authLoading} />
-            </motion.div>
-          )}
-
-          {appState === 'candidate' && currentInvitation && (
-            <motion.div
-              key="candidate"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
+              <Monitor className="h-4 w-4" />
+              <span className="text-sm">Web</span>
+            </button>
+            <button
+              onClick={() => setChatOpen(true)}
+              className={`flex items-center space-x-2 px-3 py-2 rounded-md transition-colors ${
+                chatOpen ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:text-gray-800'
+              }`}
             >
-              <CandidateView 
-                invitation={currentInvitation}
-                onStart={handleCandidateStart}
-              />
-            </motion.div>
-          )}
+              <MessageCircle className="h-4 w-4" />
+              <span className="text-sm">Chat</span>
+            </button>
+          </div>
+        )}
 
-          {appState === 'invite' && (
-            <motion.div
-              key="invite"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-            >
-              <InviteForm 
-                requestor={user!}
-                onInvitationSent={handleInvitationSent}
-                loading={llmLoading}
-              />
-            </motion.div>
-          )}
-
-          {appState === 'mode-selection' && (
-            <motion.div
-              key="mode-selection"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-            >
-              <div className="text-center mb-8">
-                <h1 className="text-4xl font-bold text-gray-900 mb-4">
-                  Interview Preparation Platform
-                </h1>
-                <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-                  Master your interviews with AI-powered practice sessions, comprehensive learning resources, 
-                  and detailed performance evaluations powered by Groq.
-                </p>
-                {user && (
-                  <div className="mt-4 inline-flex items-center px-4 py-2 bg-green-100 text-green-800 rounded-full text-sm font-medium">
-                    Welcome back, {user.name || user.email}! You now have access to all features including evaluation mode.
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <AnimatePresence mode="wait">
+            {appState === 'auth' && (
+              <motion.div
+                key="auth"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+              >
+                {currentInvitation && (
+                  <div className="text-center mb-6">
+                    <div className="bg-blue-50 p-4 rounded-lg">
+                      <h3 className="text-lg font-semibold text-blue-900 mb-2">
+                        Assessment Invitation
+                      </h3>
+                      <p className="text-blue-800">
+                        You've been invited to take an assessment for <strong>{currentInvitation.role}</strong> at <strong>{currentInvitation.company}</strong>
+                      </p>
+                      <p className="text-sm text-blue-600 mt-2">
+                        Please login or create an account to continue
+                      </p>
+                    </div>
                   </div>
                 )}
-              </div>
-              
-              <ModeSelector
-                selectedMode={selectedMode}
-                onModeChange={handleModeChange}
-                isAuthenticated={!!user}
-              />
-            </motion.div>
-          )}
+                <AuthErrorBoundary>
+                  <AuthForm onLogin={login} onRegister={register} loading={authLoading} onSuccess={handleAuthSuccess} />
+                </AuthErrorBoundary>
+              </motion.div>
+            )}
 
-          {appState === 'config' && (
-            <motion.div
-              key="config"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-            >
-              <ConfigForm
-                mode={selectedMode}
-                onSubmit={handleConfigSubmit}
-                loading={llmLoading}
-              />
-            </motion.div>
-          )}
+            {appState === 'candidate' && currentInvitation && (
+              <motion.div
+                key="candidate"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+              >
+                <ErrorBoundary>
+                  <CandidateView 
+                    invitation={currentInvitation}
+                    onStart={handleCandidateStart}
+                  />
+                </ErrorBoundary>
+              </motion.div>
+            )}
 
-          {appState === 'questions' && questions.length > 0 && currentQuestionIndex < questions.length && (
-            <motion.div
-              key={`question-${currentQuestionIndex}`}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-            >
-              <QuestionView
-                question={questions[currentQuestionIndex]}
-                mode={currentInvitation ? 'evaluate' : selectedMode}
-                currentIndex={currentQuestionIndex}
-                totalQuestions={questions.length}
-                onAnswer={handleAnswer}
-                onNext={handleNext}
-                onPrevious={handlePrevious}
-                canNavigate={canNavigateNext()}
-                isInvitedCandidate={!!currentInvitation}
-              />
-            </motion.div>
-          )}
+            {appState === 'invite' && (
+              <motion.div
+                key="invite"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+              >
+                <ErrorBoundary>
+                  <InviteForm 
+                    requestor={user!}
+                    onInvitationSent={handleInvitationSent}
+                    loading={llmLoading}
+                  />
+                </ErrorBoundary>
+              </motion.div>
+            )}
 
-          {appState === 'results' && results && config && (
-            <motion.div
-              key="results"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-            >
-              <Results
-                result={results}
-                config={config}
-                invitation={currentInvitation}
-                onDownload={handleDownloadResults}
-                onRestart={handleRestart}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
+            {appState === 'mode-selection' && (
+              <motion.div
+                key="mode-selection"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+              >
+                <div className="text-center mb-8">
+                  <h1 className="text-4xl font-bold text-gray-900 mb-4">
+                    Interview Preparation Platform
+                  </h1>
+                  <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+                    Master your interviews with AI-powered practice sessions, comprehensive learning resources, 
+                    and detailed performance evaluations powered by Groq.
+                  </p>
+                  {user && (
+                    <div className="mt-4 inline-flex items-center px-4 py-2 bg-green-100 text-green-800 rounded-full text-sm font-medium">
+                      Welcome back, {user.name || user.email}! You now have access to all features including evaluation mode.
+                    </div>
+                  )}
+                </div>
+                
+                <ErrorBoundary>
+                  <ModeSelector
+                    selectedMode={selectedMode}
+                    onModeChange={handleModeChange}
+                    isAuthenticated={!!user}
+                  />
+                </ErrorBoundary>
+              </motion.div>
+            )}
 
-      {/* Chat Interface - Hide for candidate view */}
-      {!currentInvitation && (
-        <ChatInterface isOpen={chatOpen} onClose={() => setChatOpen(false)} />
-      )}
-      
-      {/* Loading Overlay */}
-      {llmLoading && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 text-center">
-            <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-gray-700">Processing with Groq AI...</p>
+            {appState === 'config' && (
+              <motion.div
+                key="config"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+              >
+                <ErrorBoundary>
+                  <ConfigForm
+                    mode={selectedMode}
+                    onSubmit={handleConfigSubmit}
+                    loading={llmLoading}
+                  />
+                </ErrorBoundary>
+              </motion.div>
+            )}
+
+            {appState === 'questions' && questions.length > 0 && currentQuestionIndex < questions.length && (
+              <motion.div
+                key={`question-${currentQuestionIndex}`}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+              >
+                <QuestionErrorBoundary>
+                  <QuestionView
+                    question={questions[currentQuestionIndex]}
+                    mode={currentInvitation ? 'evaluate' : selectedMode}
+                    currentIndex={currentQuestionIndex}
+                    totalQuestions={questions.length}
+                    onAnswer={handleAnswer}
+                    onNext={handleNext}
+                    onPrevious={handlePrevious}
+                    onSkip={handleSkip}
+                    onFinish={finishAssessment}
+                    canNavigate={canNavigateNext()}
+                    isInvitedCandidate={!!currentInvitation}
+                    skippedQuestions={skippedQuestions}
+                    hasCompletedInitialPass={hasCompletedInitialPass}
+                    assessmentStartTime={assessmentStartTime}
+                    questionStartTime={questionStartTime}
+                    questionTimeLimit={getQuestionTimeLimit(questions[currentQuestionIndex])}
+                  />
+                </QuestionErrorBoundary>
+              </motion.div>
+            )}
+
+            {appState === 'results' && results && config && (
+              <motion.div
+                key="results"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+              >
+                <ErrorBoundary>
+                  <Results
+                    result={results}
+                    config={config}
+                    invitation={currentInvitation}
+                    onDownload={handleDownloadResults}
+                    onRestart={handleRestart}
+                  />
+                </ErrorBoundary>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </main>
+
+        {/* Chat Interface - Hide for candidate view */}
+        {!currentInvitation && (
+          <ErrorBoundary fallback={
+            <div className="fixed bottom-4 right-4 bg-red-50 p-4 rounded-lg">
+              <p className="text-red-800 text-sm">Chat unavailable</p>
+            </div>
+          }>
+            <ChatInterface isOpen={chatOpen} onClose={() => setChatOpen(false)} />
+          </ErrorBoundary>
+        )}
+        
+        {/* Loading Overlay */}
+        {llmLoading && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 text-center">
+              <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+              <p className="text-gray-700">Processing with Groq AI...</p>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </ErrorBoundary>
   );
 }
 

@@ -70,16 +70,16 @@ const getIcon = (iconName: string) => {
 
 export const InviteForm: React.FC<InviteFormProps> = ({ requestor, onInvitationSent, loading }) => {
   const [formData, setFormData] = useState({
-    candidateEmail: '',
-    candidateName: '',
-    role: '',
-    company: '',
-    skills: [] as string[],
+    candidateEmail: 'candidate@example.com',
+    candidateName: 'John Doe',
+    role: 'Senior Software Engineer',
+    company: 'Microsoft',
+    skills: ['React', 'TypeScript', 'System Design'] as string[],
     proficiencyLevel: 'intermediate' as 'beginner' | 'intermediate' | 'advanced' | 'expert',
     numberOfQuestions: 25,
     questionTypes: ['technical-coding', 'technical-concepts'] as QuestionType[],
     expiryDays: 7,
-    customMessage: ''
+    customMessage: 'Good luck with your technical assessment!'
   });
   
   const [skillInput, setSkillInput] = useState('');
@@ -144,10 +144,44 @@ export const InviteForm: React.FC<InviteFormProps> = ({ requestor, onInvitationS
       customMessage: formData.customMessage
     };
 
-    // Save invitation to localStorage
-    const existingInvitations = JSON.parse(localStorage.getItem('interview_invitations') || '[]');
-    existingInvitations.push(invitation);
-    localStorage.setItem('interview_invitations', JSON.stringify(existingInvitations));
+    // Save invitation to database
+    try {
+      console.log('Saving invitation to database:', invitation.id);
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+      console.log('API URL:', apiUrl);
+      
+      const response = await fetch(`${apiUrl}/invitations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invitation })
+      });
+      
+      console.log('Save response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Save error response:', errorText);
+        throw new Error(`Failed to save invitation: ${response.status} ${errorText}`);
+      }
+      
+      const result = await response.json();
+      console.log('Invitation saved successfully:', result);
+    } catch (error) {
+      console.error('Error saving invitation to database:', error);
+      console.log('Falling back to localStorage storage');
+      
+      // Fallback to localStorage if database fails
+      try {
+        const existingInvitations = JSON.parse(localStorage.getItem('interview_invitations') || '[]');
+        existingInvitations.push(invitation);
+        localStorage.setItem('interview_invitations', JSON.stringify(existingInvitations));
+        console.log('Invitation saved to localStorage as fallback');
+      } catch (localError) {
+        console.error('Failed to save to localStorage:', localError);
+        alert('Failed to save invitation. Please try again.');
+        return;
+      }
+    }
 
     // Generate invitation link
     const baseUrl = window.location.origin;

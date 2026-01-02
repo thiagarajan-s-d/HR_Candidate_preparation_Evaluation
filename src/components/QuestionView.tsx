@@ -12,8 +12,15 @@ interface QuestionViewProps {
   onAnswer: (answer: string, timeSpent: number) => void;
   onNext: () => void;
   onPrevious: () => void;
+  onSkip: () => void;
+  onFinish: (currentAnswer?: string, timeSpent?: number) => void;
   canNavigate: boolean;
   isInvitedCandidate?: boolean;
+  skippedQuestions?: Set<number>;
+  hasCompletedInitialPass?: boolean;
+  assessmentStartTime?: number | null;
+  questionStartTime?: number;
+  questionTimeLimit?: number;
 }
 
 const getQuestionTypeIcon = (type: QuestionType) => {
@@ -62,17 +69,17 @@ const getQuestionTypeLabel = (type: QuestionType) => {
 const FormattedText: React.FC<{ text: string }> = ({ text }) => {
   // Convert markdown-style code blocks and formatting
   const formatText = (text: string) => {
-    // Split by code blocks first - handle both ``` and single backticks
-    const parts = text.split(/```(\w*)\n?([\s\S]*?)```|`([^`]+)`/g);
+    // Split by code blocks first
+    const parts = text.split(/```(\w+)?\n([\s\S]*?)```/g);
     const elements = [];
     
     for (let i = 0; i < parts.length; i++) {
-      if (i % 4 === 0) {
+      if (i % 3 === 0) {
         // Regular text part
         const textPart = parts[i];
         if (textPart) {
           // Handle line breaks and bullet points
-          const lines = textPart.split(/\n/);
+          const lines = textPart.split('\n');
           lines.forEach((line, lineIndex) => {
             if (line.trim()) {
               // Handle bold text
@@ -81,37 +88,15 @@ const FormattedText: React.FC<{ text: string }> = ({ text }) => {
                 if (partIndex % 2 === 1) {
                   return <strong key={partIndex}>{part}</strong>;
                 }
-                // Handle inline code
-                const codeFormatted = part.split(/`([^`]+)`/g);
-                return codeFormatted.map((codePart, codeIndex) => {
-                  if (codeIndex % 2 === 1) {
-                    return <code key={codeIndex} className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-red-600">{codePart}</code>;
-                  }
-                  return codePart;
-                });
+                return part;
               });
               
               // Check if it's a bullet point
-              if (line.trim().startsWith('•') || line.trim().startsWith('-') || line.trim().startsWith('*')) {
-                elements.push(
-                  <div key={`${i}-${lineIndex}`} className="ml-4 mb-1 flex items-start">
-                    <span className="text-blue-600 mr-2">•</span>
-                    <span>{lineElements}</span>
-                  </div>
-                );
-              } else if (line.trim().match(/^\d+\./)) {
-                // Numbered list
+              if (line.trim().startsWith('•') || line.trim().startsWith('-')) {
                 elements.push(
                   <div key={`${i}-${lineIndex}`} className="ml-4 mb-1">
                     {lineElements}
                   </div>
-                );
-              } else if (line.trim().startsWith('**') && line.trim().endsWith('**')) {
-                // Section headers
-                elements.push(
-                  <h4 key={`${i}-${lineIndex}`} className="font-semibold text-gray-900 mt-4 mb-2">
-                    {line.trim().replace(/\*\*/g, '')}
-                  </h4>
                 );
               } else {
                 elements.push(
@@ -125,116 +110,23 @@ const FormattedText: React.FC<{ text: string }> = ({ text }) => {
             }
           });
         }
-      } else if (i % 4 === 2) {
+      } else if (i % 3 === 2) {
         // Code block content
-        const language = parts[i - 1]?.toLowerCase() || 'javascript';
+        const language = parts[i - 1] || 'javascript';
         const code = parts[i];
         if (code) {
-          // Format the code with proper indentation
-          const formattedCode = formatCodeBlock(code.trim(), language);
           elements.push(
-            <div key={`code-${i}`} className="my-4">
-              <div className="bg-gray-800 text-gray-300 px-3 py-1 text-xs font-medium rounded-t-lg border-b border-gray-600">
-                {language || 'code'}
-              </div>
-              <pre className="bg-gray-900 text-gray-100 p-4 rounded-b-lg overflow-x-auto font-mono text-sm leading-relaxed">
-                <code 
-                  className={`language-${language}`} 
-                  dangerouslySetInnerHTML={{ __html: formattedCode }}
-                />
-              </pre>
-            </div>
-          );
-        }
-      } else if (i % 4 === 3) {
-        // Inline code content
-        const inlineCode = parts[i];
-        if (inlineCode) {
-          elements.push(
-            <code key={`inline-${i}`} className="bg-gray-100 px-2 py-1 rounded text-sm font-mono text-red-600">
-              {inlineCode}
+            <pre key={`code-${i}`} className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto my-4">
+              <code className={`language-${language}`}>
+                {code.trim()}
               </code>
+            </pre>
           );
         }
       }
     }
     
     return elements;
-  };
-
-  // Format code blocks with syntax highlighting and proper indentation
-  const formatCodeBlock = (code: string, language: string): string => {
-    // Clean and format the code first
-    let formattedCode = code.trim();
-    
-    // Ensure proper indentation
-    const lines = code.split('\n');
-    let indentLevel = 0;
-    const indentedLines = lines.map(line => {
-      const trimmedLine = line.trim();
-      
-      // Adjust indent level based on brackets
-      if (trimmedLine.includes('}') || trimmedLine.includes(']') || trimmedLine.includes(')')) {
-        indentLevel = Math.max(0, indentLevel - 1);
-      }
-      
-      const indentedLine = '  '.repeat(indentLevel) + trimmedLine;
-      
-      if (trimmedLine.includes('{') || trimmedLine.includes('[') || trimmedLine.includes('(')) {
-        indentLevel++;
-      }
-      
-      return indentedLine;
-    });
-    
-    formattedCode = indentedLines.join('\n');
-    
-    // Apply basic syntax highlighting with proper HTML escaping
-    formattedCode = formattedCode
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-    
-    if (language === 'javascript' || language === 'js' || language === 'typescript' || language === 'ts') {
-      formattedCode = formattedCode
-        .replace(/\b(function|const|let|var|if|else|for|while|return|class|extends|import|export|from|async|await|try|catch|finally)\b/g, '<span style="color: #569cd6;">$1</span>')
-        .replace(/\b(true|false|null|undefined)\b/g, '<span style="color: #569cd6;">$1</span>')
-        .replace(/\b(\d+)\b/g, '<span style="color: #b5cea8;">$1</span>')
-        .replace(/(\/\/.*$)/gm, '<span style="color: #6a9955;">$1</span>')
-        .replace(/(['"`])((?:(?!\1)[^\\]|\\.)*)(\1)/g, '<span style="color: #ce9178;">$1$2$3</span>');
-    } else if (language === 'python' || language === 'py') {
-      formattedCode = formattedCode
-        .replace(/\b(def|class|if|elif|else|for|while|return|import|from|as|try|except|finally|with|lambda|yield|async|await)\b/g, '<span style="color: #569cd6;">$1</span>')
-        .replace(/\b(True|False|None)\b/g, '<span style="color: #569cd6;">$1</span>')
-        .replace(/\b(\d+)\b/g, '<span style="color: #b5cea8;">$1</span>')
-        .replace(/(#.*$)/gm, '<span style="color: #6a9955;">$1</span>')
-        .replace(/(['"`])((?:(?!\1)[^\\]|\\.)*)(\1)/g, '<span style="color: #ce9178;">$1$2$3</span>');
-    } else if (language === 'java') {
-      formattedCode = formattedCode
-        .replace(/\b(public|private|protected|static|final|class|interface|extends|implements|if|else|for|while|return|try|catch|finally|throw|throws|new|this|super)\b/g, '<span style="color: #569cd6;">$1</span>')
-        .replace(/\b(true|false|null)\b/g, '<span style="color: #569cd6;">$1</span>')
-        .replace(/\b(\d+)\b/g, '<span style="color: #b5cea8;">$1</span>')
-        .replace(/(\/\/.*$)/gm, '<span style="color: #6a9955;">$1</span>')
-        .replace(/(['"`])((?:(?!\1)[^\\]|\\.)*)(\1)/g, '<span style="color: #ce9178;">$1$2$3</span>');
-    } else if (language === 'html') {
-      formattedCode = formattedCode
-        .replace(/(&lt;\/?[^&gt;]+&gt;)/g, '<span style="color: #569cd6;">$1</span>')
-        .replace(/(\w+)=/g, '<span style="color: #92c5f8;">$1</span>=')
-        .replace(/=(['"`])((?:(?!\1)[^\\]|\\.)*)(\1)/g, '=<span style="color: #ce9178;">$1$2$3</span>');
-    } else if (language === 'css') {
-      formattedCode = formattedCode
-        .replace(/([.#]?[\w-]+)\s*{/g, '<span style="color: #d7ba7d;">$1</span> {')
-        .replace(/([\w-]+):/g, '<span style="color: #9cdcfe;">$1</span>:')
-        .replace(/:\s*([^;]+);/g, ': <span style="color: #ce9178;">$1</span>;');
-    } else if (language === 'sql') {
-      formattedCode = formattedCode
-        .replace(/\b(SELECT|FROM|WHERE|JOIN|INNER|LEFT|RIGHT|ON|GROUP|ORDER|BY|HAVING|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TABLE|INDEX|DATABASE)\b/gi, '<span style="color: #569cd6;">$1</span>')
-        .replace(/\b(\d+)\b/g, '<span style="color: #b5cea8;">$1</span>')
-        .replace(/(--.*$)/gm, '<span style="color: #6a9955;">$1</span>')
-        .replace(/(['"`])((?:(?!\1)[^\\]|\\.)*)(\1)/g, '<span style="color: #ce9178;">$1$2$3</span>');
-    }
-    
-    return formattedCode;
   };
 
   return <div className="whitespace-pre-wrap">{formatText(text)}</div>;
@@ -248,25 +140,59 @@ export const QuestionView: React.FC<QuestionViewProps> = ({
   onAnswer,
   onNext,
   onPrevious,
+  onSkip,
+  onFinish,
   canNavigate,
-  isInvitedCandidate = false
+  isInvitedCandidate = false,
+  skippedQuestions = new Set(),
+  hasCompletedInitialPass = false,
+  assessmentStartTime = null,
+  questionStartTime = Date.now(),
+  questionTimeLimit = 300
 }) => {
   const [answer, setAnswer] = useState('');
-  const [timeSpent, setTimeSpent] = useState(0);
+  const [questionTimeSpent, setQuestionTimeSpent] = useState(0);
+  const [totalAssessmentTime, setTotalAssessmentTime] = useState(0);
   const [showAnswer, setShowAnswer] = useState(mode === 'learn');
   const [hasSubmitted, setHasSubmitted] = useState(false);
 
+  // Question timer
   useEffect(() => {
     const timer = setInterval(() => {
-      setTimeSpent(prev => prev + 1);
+      const elapsed = Math.floor((Date.now() - questionStartTime) / 1000);
+      setQuestionTimeSpent(elapsed);
+      
+      // Auto-skip if question time limit exceeded
+      if (elapsed >= questionTimeLimit && !hasSubmitted) {
+        console.log('Question time limit exceeded, auto-skipping');
+        onSkip();
+      }
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [currentIndex]);
+  }, [questionStartTime, questionTimeLimit, hasSubmitted, onSkip]);
+
+  // Overall assessment timer
+  useEffect(() => {
+    if (!assessmentStartTime) return;
+    
+    const timer = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - assessmentStartTime) / 1000);
+      setTotalAssessmentTime(elapsed);
+      
+      // Auto-finish if 1 hour exceeded
+      if (elapsed >= 3600) { // 1 hour = 3600 seconds
+        console.log('Assessment time limit (1 hour) exceeded, auto-finishing');
+        onFinish();
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [assessmentStartTime, onFinish]);
 
   useEffect(() => {
     setAnswer('');
-    setTimeSpent(0);
+    setQuestionTimeSpent(0);
     setShowAnswer(mode === 'learn');
     setHasSubmitted(false);
   }, [currentIndex, mode]);
@@ -274,16 +200,18 @@ export const QuestionView: React.FC<QuestionViewProps> = ({
   const handleSubmit = () => {
     if (answer.trim() && !hasSubmitted) {
       setHasSubmitted(true);
-      onAnswer(answer, timeSpent);
+      onAnswer(answer, questionTimeSpent);
       
       if (mode === 'mock') {
         setShowAnswer(true);
+        // In mock mode, show answer and wait for user to click Next
+        // Don't auto-navigate
+      } else if (mode === 'learn') {
+        // In learn mode, auto-navigate after a brief delay
+        setTimeout(() => {
+          onNext();
+        }, 500);
       }
-      
-      // Auto-navigate to next question after a brief delay
-      setTimeout(() => {
-        onNext();
-      }, mode === 'mock' ? 2000 : 500); // Longer delay for mock mode to show answer
     }
   };
 
@@ -329,11 +257,23 @@ export const QuestionView: React.FC<QuestionViewProps> = ({
               </span>
             </div>
           </div>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-6">
             <div className="flex items-center space-x-2">
-              <Clock className="h-5 w-5" />
-              <span className="font-mono">{formatTime(timeSpent)}</span>
+              <Clock className="h-4 w-4" />
+              <div className="text-sm">
+                <div className="font-mono">{formatTime(questionTimeSpent)}</div>
+                <div className="text-xs opacity-75">Question: {formatTime(questionTimeLimit - questionTimeSpent)} left</div>
+              </div>
             </div>
+            {assessmentStartTime && (
+              <div className="flex items-center space-x-2">
+                <Clock className="h-4 w-4" />
+                <div className="text-sm">
+                  <div className="font-mono">{formatTime(totalAssessmentTime)}</div>
+                  <div className="text-xs opacity-75">Total: {formatTime(3600 - totalAssessmentTime)} left</div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -357,28 +297,44 @@ export const QuestionView: React.FC<QuestionViewProps> = ({
               placeholder="Type your answer here or use the microphone to dictate..."
             />
             
-            <button
-              onClick={handleSubmit}
-              disabled={!answer.trim() || hasSubmitted}
-              className={`mt-4 px-6 py-3 font-medium rounded-lg transition-all duration-200 ${
-                hasSubmitted
-                  ? 'bg-green-600 text-white cursor-default'
-                  : !answer.trim()
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : isInvitedCandidate
-                  ? 'bg-orange-600 text-white hover:bg-orange-700 hover:shadow-lg transform hover:scale-105'
-                  : 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg transform hover:scale-105'
-              }`}
-            >
-              {hasSubmitted ? (
-                <div className="flex items-center space-x-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>Submitted! Moving to next...</span>
-                </div>
-              ) : (
-                'Submit Answer'
-              )}
-            </button>
+            <div className="flex flex-wrap gap-3 mt-4">
+              <button
+                onClick={handleSubmit}
+                disabled={!answer.trim() || hasSubmitted}
+                className={`px-6 py-3 font-medium rounded-lg transition-all duration-200 ${
+                  hasSubmitted
+                    ? 'bg-green-600 text-white cursor-default'
+                    : !answer.trim()
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : isInvitedCandidate
+                    ? 'bg-orange-600 text-white hover:bg-orange-700 hover:shadow-lg transform hover:scale-105'
+                    : 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg transform hover:scale-105'
+                }`}
+              >
+                {hasSubmitted ? (
+                  <div className="flex items-center space-x-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Submitted! Moving to next...</span>
+                  </div>
+                ) : (
+                  'Submit Answer'
+                )}
+              </button>
+              
+              <button
+                onClick={onSkip}
+                disabled={hasSubmitted}
+                className={`px-6 py-3 font-medium rounded-lg border-2 transition-all duration-200 ${
+                  hasSubmitted
+                    ? 'border-gray-300 text-gray-400 cursor-not-allowed'
+                    : isInvitedCandidate
+                    ? 'border-orange-600 text-orange-600 hover:bg-orange-50'
+                    : 'border-blue-600 text-blue-600 hover:bg-blue-50'
+                }`}
+              >
+                Skip Question
+              </button>
+            </div>
             
             {hasSubmitted && mode === 'mock' && (
               <p className="mt-2 text-sm text-green-600">
@@ -454,28 +410,63 @@ export const QuestionView: React.FC<QuestionViewProps> = ({
               className={`w-3 h-3 rounded-full transition-colors ${
                 index === currentIndex
                   ? isInvitedCandidate ? 'bg-orange-600' : 'bg-blue-600'
+                  : skippedQuestions.has(index)
+                  ? 'bg-yellow-500'
                   : index < currentIndex
                   ? 'bg-green-500'
                   : 'bg-gray-300'
               }`}
+              title={skippedQuestions.has(index) ? 'Skipped' : index < currentIndex ? 'Completed' : index === currentIndex ? 'Current' : 'Pending'}
             />
           ))}
         </div>
 
-        <button
-          onClick={onNext}
-          disabled={!canNavigate && !hasSubmitted}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 ${
-            canNavigate || hasSubmitted
-              ? isInvitedCandidate
-                ? 'bg-orange-600 text-white hover:bg-orange-700 hover:shadow-lg'
-                : 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg'
-              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-          }`}
-        >
-          <span>{currentIndex === totalQuestions - 1 ? 'Finish' : 'Next'}</span>
-          <ChevronRight className="h-5 w-5" />
-        </button>
+        {hasCompletedInitialPass ? (
+          <div className="flex space-x-2">
+            {skippedQuestions.size > 0 && (
+              <button
+                onClick={onNext}
+                disabled={!canNavigate && !hasSubmitted}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 ${
+                  canNavigate || hasSubmitted
+                    ? isInvitedCandidate
+                      ? 'bg-yellow-600 text-white hover:bg-yellow-700 hover:shadow-lg'
+                      : 'bg-yellow-600 text-white hover:bg-yellow-700 hover:shadow-lg'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
+              >
+                <span>Review Skipped ({skippedQuestions.size})</span>
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            )}
+            <button
+              onClick={() => onFinish(answer.trim() ? answer : undefined, questionTimeSpent)}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 ${
+                isInvitedCandidate
+                  ? 'bg-green-600 text-white hover:bg-green-700 hover:shadow-lg'
+                  : 'bg-green-600 text-white hover:bg-green-700 hover:shadow-lg'
+              }`}
+            >
+              <span>Finish Assessment</span>
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onNext}
+            disabled={!canNavigate && !hasSubmitted}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 ${
+              canNavigate || hasSubmitted
+                ? isInvitedCandidate
+                  ? 'bg-orange-600 text-white hover:bg-orange-700 hover:shadow-lg'
+                  : 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg'
+                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            }`}
+          >
+            <span>{currentIndex === totalQuestions - 1 ? 'Complete' : 'Next'}</span>
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        )}
       </div>
     </motion.div>
   );

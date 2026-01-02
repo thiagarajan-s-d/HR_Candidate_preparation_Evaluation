@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Download, Star, TrendingUp, BookOpen, Target, Mail, User, Building } from 'lucide-react';
+import { Download, Star, TrendingUp, BookOpen, Target, Mail, User, Building, CheckCircle, XCircle, AlertCircle, MinusCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { EvaluationResult, InterviewConfig, InvitationConfig } from '../types';
 
 interface ResultsProps {
@@ -156,6 +156,11 @@ export const Results: React.FC<ResultsProps> = ({ result, config, invitation, on
         </div>
       )}
 
+      {/* Question Breakdown */}
+      {result.questionBreakdown && (
+        <QuestionBreakdown breakdown={result.questionBreakdown} />
+      )}
+
       {/* Feedback */}
       <div className="bg-white rounded-xl shadow-lg p-6">
         <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
@@ -219,5 +224,109 @@ export const Results: React.FC<ResultsProps> = ({ result, config, invitation, on
         </div>
       )}
     </motion.div>
+  );
+};
+
+// Question Breakdown Component
+const QuestionBreakdown: React.FC<{ breakdown: NonNullable<EvaluationResult['questionBreakdown']> }> = ({ breakdown }) => {
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
+
+  const toggleSection = (section: string) => {
+    setExpandedSection(expandedSection === section ? null : section);
+  };
+
+  const getSectionIcon = (type: string) => {
+    switch (type) {
+      case 'correct': return <CheckCircle className="h-5 w-5 text-green-600" />;
+      case 'incorrect': return <XCircle className="h-5 w-5 text-red-600" />;
+      case 'partiallyCorrect': return <AlertCircle className="h-5 w-5 text-yellow-600" />;
+      case 'unanswered': return <MinusCircle className="h-5 w-5 text-gray-600" />;
+      default: return null;
+    }
+  };
+
+  const getSectionColor = (type: string) => {
+    switch (type) {
+      case 'correct': return 'bg-green-50 border-green-200';
+      case 'incorrect': return 'bg-red-50 border-red-200';
+      case 'partiallyCorrect': return 'bg-yellow-50 border-yellow-200';
+      case 'unanswered': return 'bg-gray-50 border-gray-200';
+      default: return 'bg-gray-50 border-gray-200';
+    }
+  };
+
+  const sections = [
+    { key: 'correct', title: 'Correct Answers', data: breakdown.correct },
+    { key: 'partiallyCorrect', title: 'Partially Correct', data: breakdown.partiallyCorrect },
+    { key: 'incorrect', title: 'Incorrect Answers', data: breakdown.incorrect },
+    { key: 'unanswered', title: 'Unanswered Questions', data: breakdown.unanswered }
+  ];
+
+  return (
+    <div className="bg-white rounded-xl shadow-lg p-6">
+      <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+        <Target className="h-6 w-6 mr-2 text-blue-600" />
+        Question Analysis
+      </h3>
+      
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        {sections.map(section => (
+          <div key={section.key} className={`p-4 rounded-lg border-2 ${getSectionColor(section.key)}`}>
+            <div className="flex items-center justify-between mb-2">
+              {getSectionIcon(section.key)}
+              <span className="text-2xl font-bold">{section.data.length}</span>
+            </div>
+            <p className="text-sm font-medium">{section.title}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="space-y-3">
+        {sections.map(section => (
+          section.data.length > 0 && (
+            <div key={section.key} className={`border rounded-lg ${getSectionColor(section.key)}`}>
+              <button
+                onClick={() => toggleSection(section.key)}
+                className="w-full p-4 flex items-center justify-between hover:bg-opacity-50 transition-colors"
+              >
+                <div className="flex items-center space-x-3">
+                  {getSectionIcon(section.key)}
+                  <span className="font-medium">{section.title} ({section.data.length})</span>
+                </div>
+                {expandedSection === section.key ? 
+                  <ChevronUp className="h-5 w-5" /> : 
+                  <ChevronDown className="h-5 w-5" />
+                }
+              </button>
+              
+              {expandedSection === section.key && (
+                <div className="px-4 pb-4 space-y-3">
+                  {section.data.map((result, index) => (
+                    <div key={index} className="bg-white p-3 rounded border">
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="font-medium text-sm">
+                          Q{index + 1}: {result.question.type.replace('-', ' ')}
+                        </h4>
+                        <span className="text-xs bg-gray-100 px-2 py-1 rounded">
+                          Score: {result.score}%
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-700 mb-2">
+                        {result.question.question.substring(0, 100)}...
+                      </p>
+                      {result.userAnswer && (
+                        <div className="text-xs text-gray-600">
+                          <strong>Your Answer:</strong> {result.userAnswer.answer.substring(0, 150)}...
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        ))}
+      </div>
+    </div>
   );
 };

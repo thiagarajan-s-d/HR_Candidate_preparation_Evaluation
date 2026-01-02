@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Groq from 'groq-sdk';
-import { InterviewConfig, Question, UserAnswer, EvaluationResult, QuestionType } from '../types';
+import { InterviewConfig, Question, UserAnswer, EvaluationResult, QuestionType, QuestionResult } from '../types';
+import { ApiErrorHandler, apiCall } from '../lib/apiErrorHandler';
 
 // Initialize Groq client with detailed logging
 const groq = new Groq({
@@ -39,32 +40,37 @@ export const useLLM = () => {
     setLoading(true);
     
     try {
-      // Check API key before making request
-      if (!import.meta.env.VITE_GROQ_API_KEY || import.meta.env.VITE_GROQ_API_KEY === 'your-groq-api-key-here') {
-        console.error('❌ Groq API key is not properly configured!');
-        console.log('💡 Please set VITE_GROQ_API_KEY in your .env file');
-        throw new Error('Groq API key not configured. Please check your .env file.');
-      }
+      return await apiCall(
+        async () => {
+          // Check API key before making request
+          if (!import.meta.env.VITE_GROQ_API_KEY || import.meta.env.VITE_GROQ_API_KEY === 'your-groq-api-key-here') {
+            console.error('❌ Groq API key is not properly configured!');
+            console.log('💡 Please set VITE_GROQ_API_KEY in your .env file');
+            throw ApiErrorHandler.createApiError(
+              'Groq API key not configured. Please check your .env file.',
+              'AUTH_ERROR'
+            );
+          }
 
-      console.log('✅ API key is configured, proceeding with API call...');
-      
-      // Create a more detailed prompt that ensures unique questions
-      const questionTypesDescription = config.questionTypes
-        .map(type => `${type}: ${getQuestionTypeDescription(type)}`)
-        .join(', ');
+          console.log('✅ API key is configured, proceeding with API call...');
+          
+          // Create a more detailed prompt that ensures unique questions
+          const questionTypesDescription = config.questionTypes
+            .map(type => `${type}: ${getQuestionTypeDescription(type)}`)
+            .join(', ');
 
-      // Calculate distribution of questions across types
-      const questionsPerType = Math.floor(config.numberOfQuestions / config.questionTypes.length);
-      const remainingQuestions = config.numberOfQuestions % config.questionTypes.length;
-      
-      const typeDistribution = config.questionTypes.map((type, index) => ({
-        type,
-        count: questionsPerType + (index < remainingQuestions ? 1 : 0)
-      }));
+          // Calculate distribution of questions across types
+          const questionsPerType = Math.floor(config.numberOfQuestions / config.questionTypes.length);
+          const remainingQuestions = config.numberOfQuestions % config.questionTypes.length;
+          
+          const typeDistribution = config.questionTypes.map((type, index) => ({
+            type,
+            count: questionsPerType + (index < remainingQuestions ? 1 : 0)
+          }));
 
-      console.log('📊 Question type distribution:', typeDistribution);
+          console.log('📊 Question type distribution:', typeDistribution);
 
-      const prompt = `You are generating interview questions for a ${config.role} position at ${config.company}.
+          const prompt = `You are generating interview questions for a ${config.role} position at ${config.company}.
 
 REQUIREMENTS:
 - Generate exactly ${config.numberOfQuestions} COMPLETELY DIFFERENT and UNIQUE questions
@@ -89,14 +95,6 @@ For technical-concepts: OOP principles, design patterns, data structures, algori
 
 Generate exactly ${config.numberOfQuestions} questions following this distribution. Each question must be completely unique.
 
-CRITICAL CODE FORMATTING RULES:
-- All code blocks must use proper indentation (2 or 4 spaces)
-- Use \\n for line breaks in JSON strings
-- Format code with proper syntax highlighting markers
-- Include language specification: \`\`\`javascript, \`\`\`python, etc.
-- Ensure code is readable and professionally formatted
-- Use consistent indentation throughout code blocks
-
 Return a JSON array with this exact structure:
 [
   {
@@ -110,156 +108,157 @@ Return a JSON array with this exact structure:
   }
 ]`;
 
-      console.log('📝 Prompt prepared, length:', prompt.length);
-      console.log('🌐 Making API call to Groq...');
+          console.log('📝 Prompt prepared, length:', prompt.length);
+          console.log('🌐 Making API call to Groq...');
 
-      const startTime = Date.now();
+          const startTime = Date.now();
 
-      const completion = await groq.chat.completions.create({
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert technical interviewer. Generate UNIQUE, DIVERSE interview questions. Each question must be completely different from the others. Use proper formatting with \\n for line breaks in JSON strings. Return only a valid JSON array, no additional text."
-          },
-          {
-            role: "user",
-            content: prompt
+          const completion = await groq.chat.completions.create({
+            messages: [
+              {
+                role: "system",
+                content: "You are an expert technical interviewer. Generate UNIQUE, DIVERSE interview questions. Each question must be completely different from the others. Use proper formatting with \\n for line breaks in JSON strings. Return only a valid JSON array, no additional text."
+              },
+              {
+                role: "user",
+                content: prompt
+              }
+            ],
+            model: "meta-llama/llama-4-scout-17b-16e-instruct",
+            temperature: 0.9, // Higher temperature for more variety
+            max_tokens: 8000,
+            response_format: { type: "json_object" }
+          });
+
+          const endTime = Date.now();
+          const apiCallDuration = endTime - startTime;
+
+          console.log('✅ API call completed successfully!');
+          console.log('⏱️ API call duration:', apiCallDuration + 'ms');
+          console.log('📊 API response metadata:', {
+            model: completion.model,
+            usage: completion.usage,
+            finishReason: completion.choices[0]?.finish_reason
+          });
+
+          const response = completion.choices[0]?.message?.content;
+          if (!response) {
+            console.error('❌ No content in API response');
+            throw ApiErrorHandler.createApiError('No response from Groq API', 'SERVER_ERROR');
           }
-        ],
-        model: "meta-llama/llama-4-scout-17b-16e-instruct",
-        temperature: 0.9, // Higher temperature for more variety
-        max_tokens: 8000,
-        response_format: { type: "json_object" }
-      });
 
-      const endTime = Date.now();
-      const apiCallDuration = endTime - startTime;
+          console.log('📄 Raw API response length:', response.length);
+          console.log('📄 Raw API response preview:', response.substring(0, 200) + '...');
 
-      console.log('✅ API call completed successfully!');
-      console.log('⏱️ API call duration:', apiCallDuration + 'ms');
-      console.log('📊 API response metadata:', {
-        model: completion.model,
-        usage: completion.usage,
-        finishReason: completion.choices[0]?.finish_reason
-      });
+          // Parse the JSON response
+          let questionsData;
+          try {
+            console.log('🔍 Parsing JSON response...');
+            const parsedResponse = JSON.parse(response);
+            
+            // Handle different response formats
+            if (Array.isArray(parsedResponse)) {
+              questionsData = parsedResponse;
+              console.log('✅ Response is direct array format');
+            } else if (parsedResponse.questions && Array.isArray(parsedResponse.questions)) {
+              questionsData = parsedResponse.questions;
+              console.log('✅ Response has questions property');
+            } else if (parsedResponse.data && Array.isArray(parsedResponse.data)) {
+              questionsData = parsedResponse.data;
+              console.log('✅ Response has data property');
+            } else {
+              console.error('❌ Unexpected response format:', Object.keys(parsedResponse));
+              console.error('Full response:', parsedResponse);
+              throw ApiErrorHandler.createApiError('Response is not in expected format', 'VALIDATION_ERROR');
+            }
+          } catch (parseError) {
+            console.error('❌ JSON parsing error:', parseError);
+            console.error('Raw response that failed to parse:', response);
+            throw ApiErrorHandler.createApiError('Invalid JSON response from API', 'VALIDATION_ERROR');
+          }
 
-      const response = completion.choices[0]?.message?.content;
-      if (!response) {
-        console.error('❌ No content in API response');
-        throw new Error('No response from Groq API');
-      }
+          if (!Array.isArray(questionsData) || questionsData.length === 0) {
+            console.error('❌ No questions in parsed response:', questionsData);
+            throw ApiErrorHandler.createApiError('No questions received from API', 'SERVER_ERROR');
+          }
 
-      console.log('📄 Raw API response length:', response.length);
-      console.log('📄 Raw API response preview:', response.substring(0, 200) + '...');
+          console.log(`✅ Successfully parsed ${questionsData.length} questions from API`);
 
-      // Parse the JSON response
-      let questionsData;
-      try {
-        console.log('🔍 Parsing JSON response...');
-        const parsedResponse = JSON.parse(response);
-        
-        // Handle different response formats
-        if (Array.isArray(parsedResponse)) {
-          questionsData = parsedResponse;
-          console.log('✅ Response is direct array format');
-        } else if (parsedResponse.questions && Array.isArray(parsedResponse.questions)) {
-          questionsData = parsedResponse.questions;
-          console.log('✅ Response has questions property');
-        } else if (parsedResponse.data && Array.isArray(parsedResponse.data)) {
-          questionsData = parsedResponse.data;
-          console.log('✅ Response has data property');
-        } else {
-          console.error('❌ Unexpected response format:', Object.keys(parsedResponse));
-          console.error('Full response:', parsedResponse);
-          throw new Error('Response is not in expected format');
+          // Transform and validate questions
+          const questions: Question[] = [];
+          const usedQuestions = new Set<string>();
+
+          for (let i = 0; i < Math.min(questionsData.length, config.numberOfQuestions); i++) {
+            const q = questionsData[i];
+            
+            console.log(`🔍 Processing question ${i + 1}:`, {
+              hasQuestion: !!q.question,
+              questionLength: q.question?.length || 0,
+              hasAnswer: !!q.answer,
+              hasType: !!q.type,
+              type: q.type
+            });
+            
+            // Normalize question text for duplicate detection
+            const normalizedQuestion = q.question?.toLowerCase().trim();
+            
+            if (!normalizedQuestion || usedQuestions.has(normalizedQuestion)) {
+              console.warn(`⚠️ Skipping duplicate or invalid question at index ${i}:`, q.question?.substring(0, 50) + '...');
+              continue;
+            }
+
+            usedQuestions.add(normalizedQuestion);
+
+            const question: Question = {
+              id: `q-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${i}`,
+              question: q.question || `Question ${i + 1}: What is your experience with ${config.skills[i % config.skills.length]}?`,
+              type: q.type || config.questionTypes[i % config.questionTypes.length],
+              category: q.category || config.skills[i % config.skills.length],
+              difficulty: config.proficiencyLevel,
+              answer: q.answer || `Sample answer for question ${i + 1}`,
+              explanation: q.explanation || `This question tests your knowledge and experience.`,
+              links: Array.isArray(q.links) ? q.links : []
+            };
+            
+            questions.push(question);
+            console.log(`✅ Added question ${questions.length}: ${question.question.substring(0, 80)}...`);
+          }
+
+          // If we don't have enough unique questions, generate fallback questions
+          while (questions.length < config.numberOfQuestions) {
+            console.log(`⚠️ Need more questions (${questions.length}/${config.numberOfQuestions}), generating fallback...`);
+            const fallbackQuestion = generateFallbackQuestion(questions.length, config, usedQuestions);
+            questions.push(fallbackQuestion);
+            console.log(`✅ Added fallback question ${questions.length}: ${fallbackQuestion.question.substring(0, 80)}...`);
+          }
+
+          console.log(`🎉 Final questions array: ${questions.length} unique questions generated`);
+          console.log('📋 Question previews:', questions.map((q, i) => `${i + 1}. ${q.question.substring(0, 60)}...`));
+          
+          return questions;
+        },
+        'groq-question-generation',
+        {
+          maxRetries: 2,
+          baseDelay: 2000,
+          retryableErrors: ['NETWORK_ERROR', 'TIMEOUT_ERROR', 'SERVER_ERROR', 'RATE_LIMIT_ERROR']
         }
-      } catch (parseError) {
-        console.error('❌ JSON parsing error:', parseError);
-        console.error('Raw response that failed to parse:', response);
-        throw new Error('Invalid JSON response from API');
-      }
-
-      if (!Array.isArray(questionsData) || questionsData.length === 0) {
-        console.error('❌ No questions in parsed response:', questionsData);
-        throw new Error('No questions received from API');
-      }
-
-      console.log(`✅ Successfully parsed ${questionsData.length} questions from API`);
-
-      // Transform and validate questions
-      const questions: Question[] = [];
-      const usedQuestions = new Set<string>();
-
-      for (let i = 0; i < Math.min(questionsData.length, config.numberOfQuestions); i++) {
-        const q = questionsData[i];
-        
-        console.log(`🔍 Processing question ${i + 1}:`, {
-          hasQuestion: !!q.question,
-          questionLength: q.question?.length || 0,
-          hasAnswer: !!q.answer,
-          hasType: !!q.type,
-          type: q.type
-        });
-        
-        // Normalize question text for duplicate detection
-        const normalizedQuestion = q.question?.toLowerCase().trim();
-        
-        if (!normalizedQuestion || usedQuestions.has(normalizedQuestion)) {
-          console.warn(`⚠️ Skipping duplicate or invalid question at index ${i}:`, q.question?.substring(0, 50) + '...');
-          continue;
-        }
-
-        usedQuestions.add(normalizedQuestion);
-
-        const question: Question = {
-          id: `q-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${i}`,
-          question: q.question || `Question ${i + 1}: What is your experience with ${config.skills[i % config.skills.length]}?`,
-          type: q.type || config.questionTypes[i % config.questionTypes.length],
-          category: q.category || config.skills[i % config.skills.length],
-          difficulty: config.proficiencyLevel,
-          answer: q.answer || `Sample answer for question ${i + 1}`,
-          explanation: q.explanation || `This question tests your knowledge and experience.`,
-          links: Array.isArray(q.links) ? q.links : []
-        };
-        
-        questions.push(question);
-        console.log(`✅ Added question ${questions.length}: ${question.question.substring(0, 80)}...`);
-      }
-
-      // If we don't have enough unique questions, generate fallback questions
-      while (questions.length < config.numberOfQuestions) {
-        console.log(`⚠️ Need more questions (${questions.length}/${config.numberOfQuestions}), generating fallback...`);
-        const fallbackQuestion = generateFallbackQuestion(questions.length, config, usedQuestions);
-        questions.push(fallbackQuestion);
-        console.log(`✅ Added fallback question ${questions.length}: ${fallbackQuestion.question.substring(0, 80)}...`);
-      }
-
-      console.log(`🎉 Final questions array: ${questions.length} unique questions generated`);
-      console.log('📋 Question previews:', questions.map((q, i) => `${i + 1}. ${q.question.substring(0, 60)}...`));
-      
-      setLoading(false);
-      return questions;
+      );
     } catch (error) {
       console.error('❌ Error in generateQuestions:', error);
       
-      // Log specific error details
-      if (error instanceof Error) {
-        console.error('Error name:', error.name);
-        console.error('Error message:', error.message);
-        console.error('Error stack:', error.stack);
-      }
-      
       // Check if it's an API key issue
-      if (error.message?.includes('API key') || error.message?.includes('authentication')) {
+      const errorInfo = ApiErrorHandler.categorizeError(error as Error);
+      if (errorInfo.category === 'AUTH_ERROR') {
         console.error('🔑 This appears to be an API key issue');
         alert('API Key Error: Please check your Groq API key configuration in the .env file');
       }
       
-      setLoading(false);
-      
       // Fallback to mock questions if API fails
       console.log('🔄 Falling back to mock questions due to API error');
       return generateMockQuestions(config);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -278,126 +277,132 @@ Return a JSON array with this exact structure:
     setLoading(true);
     
     try {
-      // Check API key before making request
-      if (!import.meta.env.VITE_GROQ_API_KEY || import.meta.env.VITE_GROQ_API_KEY === 'your-groq-api-key-here') {
-        console.error('❌ Groq API key is not properly configured for evaluation!');
-        throw new Error('Groq API key not configured for evaluation');
-      }
-
-      console.log('✅ API key is configured, proceeding with evaluation API call...');
-      
-      const evaluationPrompt = `Evaluate the following interview answers for a ${config.role} position at ${config.company}.
-      
-      Questions and Answers:
-      ${questions.map((q, i) => {
-        const userAnswer = answers.find(a => a.questionId === q.id);
-        return `
-        Question ${i + 1} (Type: ${q.type}): ${q.question}
-        Expected Answer: ${q.answer}
-        User Answer: ${userAnswer?.answer || 'No answer provided'}
-        Time Spent: ${userAnswer?.timeSpent || 0} seconds
-        `;
-      }).join('\n')}
-      
-      Return ONLY a valid JSON object with this exact structure:
-      {
-        "score": 85,
-        "assessedProficiency": "advanced",
-        "categoryScores": {
-          "React": 90,
-          "JavaScript": 80
-        },
-        "typeScores": {
-          "technical-coding": 85,
-          "behavioral": 90
-        },
-        "feedback": "Overall feedback text",
-        "recommendations": ["recommendation 1", "recommendation 2"]
-      }
-      
-      Score should be 0-100. AssessedProficiency should be: beginner, intermediate, advanced, or expert.
-      Include scores for both skill categories and question types.`;
-
-      console.log('📝 Evaluation prompt prepared, making API call...');
-      const startTime = Date.now();
-
-      const completion = await groq.chat.completions.create({
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert technical interviewer. Provide fair and constructive evaluation of interview answers, considering both technical accuracy and communication skills. You must respond with valid JSON only, no additional text or explanations."
-          },
-          {
-            role: "user",
-            content: evaluationPrompt
+      return await apiCall(
+        async () => {
+          // Check API key before making request
+          if (!import.meta.env.VITE_GROQ_API_KEY || import.meta.env.VITE_GROQ_API_KEY === 'your-groq-api-key-here') {
+            console.error('❌ Groq API key is not properly configured for evaluation!');
+            throw ApiErrorHandler.createApiError(
+              'Groq API key not configured for evaluation',
+              'AUTH_ERROR'
+            );
           }
-        ],
-        model: "meta-llama/llama-4-scout-17b-16e-instruct",
-        temperature: 0.3,
-        max_tokens: 2000,
-        response_format: { type: "json_object" }
-      });
 
-      const endTime = Date.now();
-      const apiCallDuration = endTime - startTime;
+          console.log('✅ API key is configured, proceeding with evaluation API call...');
+          
+          const evaluationPrompt = `Evaluate the following interview answers for a ${config.role} position at ${config.company}.
+          
+          Questions and Answers:
+          ${questions.map((q, i) => {
+            const userAnswer = answers.find(a => a.questionId === q.id);
+            return `
+            Question ${i + 1} (Type: ${q.type}): ${q.question}
+            Expected Answer: ${q.answer}
+            User Answer: ${userAnswer?.answer || 'No answer provided'}
+            Time Spent: ${userAnswer?.timeSpent || 0} seconds
+            `;
+          }).join('\n')}
+          
+          Return ONLY a valid JSON object with this exact structure:
+          {
+            "score": 85,
+            "assessedProficiency": "advanced",
+            "categoryScores": {
+              "React": 90,
+              "JavaScript": 80
+            },
+            "typeScores": {
+              "technical-coding": 85,
+              "behavioral": 90
+            },
+            "feedback": "Overall feedback text",
+            "recommendations": ["recommendation 1", "recommendation 2"]
+          }
+          
+          Score should be 0-100. AssessedProficiency should be: beginner, intermediate, advanced, or expert.
+          Include scores for both skill categories and question types.`;
 
-      console.log('✅ Evaluation API call completed successfully!');
-      console.log('⏱️ Evaluation API call duration:', apiCallDuration + 'ms');
+          console.log('📝 Evaluation prompt prepared, making API call...');
+          const startTime = Date.now();
 
-      const response = completion.choices[0]?.message?.content;
-      if (!response) {
-        console.error('❌ No content in evaluation API response');
-        throw new Error('No response from Groq API');
-      }
+          const completion = await groq.chat.completions.create({
+            messages: [
+              {
+                role: "system",
+                content: "You are an expert technical interviewer. Provide fair and constructive evaluation of interview answers, considering both technical accuracy and communication skills. You must respond with valid JSON only, no additional text or explanations."
+              },
+              {
+                role: "user",
+                content: evaluationPrompt
+              }
+            ],
+            model: "meta-llama/llama-4-scout-17b-16e-instruct",
+            temperature: 0.3,
+            max_tokens: 2000,
+            response_format: { type: "json_object" }
+          });
 
-      console.log('📄 Evaluation response length:', response.length);
-      console.log('📄 Evaluation response preview:', response.substring(0, 200) + '...');
+          const endTime = Date.now();
+          const apiCallDuration = endTime - startTime;
 
-      // Parse the JSON response with better error handling
-      let evaluationData;
-      try {
-        console.log('🔍 Parsing evaluation JSON response...');
-        evaluationData = JSON.parse(response);
-        console.log('✅ Evaluation JSON parsed successfully');
-      } catch (parseError) {
-        console.error('❌ Evaluation JSON parsing error:', parseError);
-        console.error('Raw evaluation response:', response);
-        throw new Error('Invalid JSON response from API');
-      }
-      
-      const result: EvaluationResult = {
-        score: evaluationData.score,
-        totalQuestions: questions.length,
-        assessedProficiency: evaluationData.assessedProficiency,
-        categoryScores: evaluationData.categoryScores,
-        typeScores: evaluationData.typeScores || {},
-        feedback: evaluationData.feedback,
-        recommendations: evaluationData.recommendations
-      };
+          console.log('✅ Evaluation API call completed successfully!');
+          console.log('⏱️ Evaluation API call duration:', apiCallDuration + 'ms');
 
-      console.log('🎉 Evaluation completed successfully:', {
-        score: result.score,
-        proficiency: result.assessedProficiency,
-        categoriesCount: Object.keys(result.categoryScores).length,
-        typesCount: Object.keys(result.typeScores).length
-      });
+          const response = completion.choices[0]?.message?.content;
+          if (!response) {
+            console.error('❌ No content in evaluation API response');
+            throw ApiErrorHandler.createApiError('No response from Groq API', 'SERVER_ERROR');
+          }
 
-      setLoading(false);
-      return result;
+          console.log('📄 Evaluation response length:', response.length);
+          console.log('📄 Evaluation response preview:', response.substring(0, 200) + '...');
+
+          // Parse the JSON response with better error handling
+          let evaluationData;
+          try {
+            console.log('🔍 Parsing evaluation JSON response...');
+            evaluationData = JSON.parse(response);
+            console.log('✅ Evaluation JSON parsed successfully');
+          } catch (parseError) {
+            console.error('❌ Evaluation JSON parsing error:', parseError);
+            console.error('Raw evaluation response:', response);
+            throw ApiErrorHandler.createApiError('Invalid JSON response from API', 'VALIDATION_ERROR');
+          }
+          
+          const result: EvaluationResult = {
+            score: evaluationData.score,
+            totalQuestions: questions.length,
+            assessedProficiency: evaluationData.assessedProficiency,
+            categoryScores: evaluationData.categoryScores,
+            typeScores: evaluationData.typeScores || {},
+            feedback: evaluationData.feedback,
+            recommendations: evaluationData.recommendations
+          };
+
+          console.log('🎉 Evaluation completed successfully:', {
+            score: result.score,
+            proficiency: result.assessedProficiency,
+            categoriesCount: Object.keys(result.categoryScores).length,
+            typesCount: Object.keys(result.typeScores).length
+          });
+
+          return result;
+        },
+        'groq-answer-evaluation',
+        {
+          maxRetries: 2,
+          baseDelay: 2000,
+          retryableErrors: ['NETWORK_ERROR', 'TIMEOUT_ERROR', 'SERVER_ERROR', 'RATE_LIMIT_ERROR']
+        }
+      );
     } catch (error) {
       console.error('❌ Error in evaluateAnswers:', error);
-      
-      // Log specific error details
-      if (error instanceof Error) {
-        console.error('Evaluation error name:', error.name);
-        console.error('Evaluation error message:', error.message);
-      }
-      
-      setLoading(false);
       
       // Fallback evaluation
       console.log('🔄 Falling back to mock evaluation due to API error');
       return generateMockEvaluation(questions, answers, config);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -440,73 +445,7 @@ Return a JSON array with this exact structure:
         const problem = problems[index % problems.length];
         
         questionText = `Using ${skill}, ${variation} a solution to ${problem}. Provide time and space complexity analysis.`;
-        answer = `Here's a solution:\n\n\`\`\`javascript\nfunction solve${index}(input) {\n  // Implementation for ${problem}\n  if (!input || input.length === 0) {\n    return null;\n  }\n  \n  let result = input[0];\n  \n  for (let i = 1; i < input.length; i++) {\n    // Process each element\n    if (input[i] > result) {\n      result = input[i];\n    }\n  }\n  \n  return result;\n}\n\`\`\`\n\n**Time Complexity:** O(n)\n**Space Complexity:** O(1)\n\n**Explanation:**\n• This solution efficiently handles the problem by iterating through the input once\n• We initialize the result with the first element\n• Each subsequent element is compared with the current result\n• The algorithm maintains optimal space usage with constant extra memory`;
-        
-        // Create a more varied coding problem based on index
-        const codingProblems = [
-          {
-            problem: 'implement a function to find the maximum element in an array',
-            code: `function findMaxElement(arr) {
-  if (!arr || arr.length === 0) {
-    return null;
-  }
-  
-  let max = arr[0];
-  
-  for (let i = 1; i < arr.length; i++) {
-    if (arr[i] > max) {
-      max = arr[i];
-    }
-  }
-  
-  return max;
-}`,
-            complexity: 'Time: O(n), Space: O(1)'
-          },
-          {
-            problem: 'reverse a linked list iteratively',
-            code: `function reverseLinkedList(head) {
-  let prev = null;
-  let current = head;
-  
-  while (current !== null) {
-    let next = current.next;
-    current.next = prev;
-    prev = current;
-    current = next;
-  }
-  
-  return prev;
-}`,
-            complexity: 'Time: O(n), Space: O(1)'
-          },
-          {
-            problem: 'implement binary search on a sorted array',
-            code: `function binarySearch(arr, target) {
-  let left = 0;
-  let right = arr.length - 1;
-  
-  while (left <= right) {
-    let mid = Math.floor((left + right) / 2);
-    
-    if (arr[mid] === target) {
-      return mid;
-    } else if (arr[mid] < target) {
-      left = mid + 1;
-    } else {
-      right = mid - 1;
-    }
-  }
-  
-  return -1;
-}`,
-            complexity: 'Time: O(log n), Space: O(1)'
-          }
-        ];
-        
-        const selectedProblem = codingProblems[index % codingProblems.length];
-        questionText = `Using ${skill}, ${selectedProblem.problem}. Provide time and space complexity analysis.`;
-        answer = `Here's a solution:\n\n\`\`\`javascript\n${selectedProblem.code}\n\`\`\`\n\n**Complexity Analysis:**\n${selectedProblem.complexity}\n\n**Explanation:**\n• This solution efficiently handles the problem with optimal time complexity\n• The algorithm uses minimal extra space\n• Each step is clearly documented for maintainability\n• Edge cases are properly handled`;
+        answer = `Here's a solution:\n\n\`\`\`javascript\nfunction solve${index}(input) {\n  // Implementation for ${problem}\n  if (!input || input.length === 0) {\n    return null;\n  }\n  \n  let result = input[0];\n  \n  for (let i = 1; i < input.length; i++) {\n    // Process each element\n    if (input[i] > result) {\n      result = input[i];\n    }\n  }\n  \n  return result;\n}\n\`\`\`\n\n**Time Complexity:** O(n)\n**Space Complexity:** O(1)\n\nThis solution efficiently handles the problem by iterating through the input once.`;
         explanation = `This question tests your ability to write efficient algorithms and understand complexity analysis.`;
         break;
         
@@ -524,7 +463,7 @@ Return a JSON array with this exact structure:
         const conceptTopic = concepts[index % concepts.length];
         
         questionText = `${variation.charAt(0).toUpperCase() + variation.slice(1)} the concept of ${conceptTopic} in ${skill}. How does it apply to ${config.role} responsibilities?`;
-        answer = `${conceptTopic.charAt(0).toUpperCase() + conceptTopic.slice(1)} in ${skill}:\n\n**Core Principles:**\n• **Definition:** ${conceptTopic} enables efficient development patterns\n• **Key Benefits:**\n  • Improved code organization\n  • Better maintainability\n  • Enhanced performance\n  • Easier testing and debugging\n\n**Application in ${config.role}:**\n• Used for building scalable applications\n• Helps in creating reusable components\n• Facilitates team collaboration\n• Ensures code quality standards\n\n**Implementation Example:**\n\`\`\`javascript\n// Example implementation\nclass ${conceptTopic.replace(/\s+/g, '')}Example {\n  constructor(options) {\n    this.options = options;\n    this.initialize();\n  }\n  \n  initialize() {\n    // Setup logic here\n    console.log('Initializing ${conceptTopic}');\n  }\n  \n  execute() {\n    // Main functionality\n    return this.processData();\n  }\n}\n\`\`\`\n\n**Best Practices:**\n• Follow established patterns\n• Write clean, readable code\n• Implement proper error handling\n• Use appropriate design patterns`;
+        answer = `${conceptTopic.charAt(0).toUpperCase() + conceptTopic.slice(1)} in ${skill}:\n\n**Core Principles:**\n• **Definition:** ${conceptTopic} enables efficient development patterns\n• **Key Benefits:**\n  - Improved code organization\n  - Better maintainability\n  - Enhanced performance\n  - Easier testing and debugging\n\n**Application in ${config.role}:**\n• Used for building scalable applications\n• Helps in creating reusable components\n• Facilitates team collaboration\n• Ensures code quality standards\n\n**Best Practices:**\n• Follow established patterns\n• Write clean, readable code\n• Implement proper error handling\n• Use appropriate design patterns`;
         explanation = `This question evaluates your theoretical understanding of core concepts and ability to explain technical topics clearly.`;
         break;
         
@@ -542,7 +481,7 @@ Return a JSON array with this exact structure:
         const system = systems[index % systems.length];
         
         questionText = `${variation.charAt(0).toUpperCase() + variation.slice(1)} a scalable ${system} that handles ${skill}. Consider performance, scalability, and reliability.`;
-        answer = `System Design for ${system}:\n\n**Architecture Overview:**\n\`\`\`\n┌─────────────┐    ┌─────────────┐    ┌─────────────┐\n│   Client    │───▶│ Load Balancer│───▶│ API Gateway │\n└─────────────┘    └─────────────┘    └─────────────┘\n                                              │\n                   ┌──────────────────────────┼──────────────────────────┐\n                   ▼                          ▼                          ▼\n            ┌─────────────┐            ┌─────────────┐            ┌─────────────┐\n            │ Auth Service│            │User Service │            │Data Service │\n            └─────────────┘            └─────────────┘            └─────────────┘\n                   │                          │                          │\n                   ▼                          ▼                          ▼\n            ┌─────────────┐            ┌─────────────┐            ┌─────────────┐\n            │   Redis     │            │  Database   │            │   Cache     │\n            └─────────────┘            └─────────────┘            └─────────────┘\n\`\`\`\n\n**Core Components:**\n• **Frontend:** React/Vue.js application with responsive design\n• **API Gateway:** Routes requests and handles authentication\n• **Microservices:** Separate services for different functionalities\n• **Database:** Distributed database with read replicas\n• **Caching:** Redis for session management and data caching\n• **Message Queue:** For asynchronous processing\n\n**Scalability Considerations:**\n• **Horizontal Scaling:** Auto-scaling groups for services\n• **Load Balancing:** Distribute traffic across multiple instances\n• **Database Sharding:** Partition data across multiple databases\n• **CDN:** Content delivery network for static assets\n\n**Reliability Measures:**\n• **Health Checks:** Monitor service availability\n• **Circuit Breakers:** Prevent cascade failures\n• **Backup Strategy:** Regular automated backups\n• **Monitoring:** Comprehensive logging and alerting`;
+        answer = `System Design for ${system}:\n\n**Architecture Overview:**\n• **Frontend:** React/Vue.js application with responsive design\n• **API Gateway:** Routes requests and handles authentication\n• **Microservices:** Separate services for different functionalities\n• **Database:** Distributed database with read replicas\n• **Caching:** Redis for session management and data caching\n• **Message Queue:** For asynchronous processing\n\n**Scalability Considerations:**\n• **Horizontal Scaling:** Auto-scaling groups for services\n• **Load Balancing:** Distribute traffic across multiple instances\n• **Database Sharding:** Partition data across multiple databases\n• **CDN:** Content delivery network for static assets\n\n**Reliability Measures:**\n• **Health Checks:** Monitor service availability\n• **Circuit Breakers:** Prevent cascade failures\n• **Backup Strategy:** Regular automated backups\n• **Monitoring:** Comprehensive logging and alerting`;
         explanation = `This tests your ability to design large-scale systems and consider trade-offs between different architectural decisions.`;
         break;
         
@@ -630,38 +569,144 @@ Return a JSON array with this exact structure:
     answers: UserAnswer[],
     config: InterviewConfig
   ): EvaluationResult => {
-    console.log('🔄 Generating mock evaluation as fallback');
+    console.log('🔄 Generating realistic evaluation based on actual answers');
     
     const totalQuestions = questions.length;
-    const score = Math.floor(Math.random() * 40 + 60); // Mock score between 60-100
+    const answeredQuestions = answers.filter(a => a.answer && a.answer.trim().length > 0);
     
+    // Calculate score based on actual answers
+    let totalScore = 0;
     const categoryScores: Record<string, number> = {};
-    config.skills.forEach(skill => {
-      categoryScores[skill] = Math.floor(Math.random() * 40 + 60);
-    });
-
     const typeScores: Record<string, number> = {};
-    config.questionTypes.forEach(type => {
-      typeScores[type] = Math.floor(Math.random() * 40 + 60);
+    
+    // Initialize category and type scores
+    config.skills.forEach(skill => categoryScores[skill] = 0);
+    config.questionTypes.forEach(type => typeScores[type] = 0);
+    
+    const questionResults: QuestionResult[] = [];
+    
+    console.log('Evaluating questions:', questions.length);
+    console.log('User answers:', answers.length);
+    console.log('Question IDs:', questions.map(q => q.id));
+    console.log('Answer IDs:', answers.map(a => a.questionId));
+    
+    questions.forEach((question, index) => {
+      const userAnswer = answers.find(a => a.questionId === question.id);
+      let questionScore = 0;
+      let category: 'correct' | 'incorrect' | 'partially-correct' | 'unanswered' = 'unanswered';
+      
+      console.log(`Question ${index + 1} (${question.id}):`, userAnswer ? 'HAS ANSWER' : 'NO ANSWER');
+      
+      if (userAnswer && userAnswer.answer && userAnswer.answer.trim().length > 0) {
+        const answerLength = userAnswer.answer.trim().length;
+        const timeSpent = userAnswer.timeSpent || 0;
+        
+        // Basic scoring logic based on answer quality indicators
+        if (answerLength < 10) {
+          questionScore = 10; // Very short answers
+          category = 'incorrect';
+        } else if (answerLength < 50) {
+          questionScore = 25; // Short answers
+          category = 'incorrect';
+        } else if (answerLength < 100) {
+          questionScore = 45; // Medium answers
+          category = 'partially-correct';
+        } else if (answerLength < 200) {
+          questionScore = 65; // Good length answers
+          category = 'partially-correct';
+        } else {
+          questionScore = 80; // Comprehensive answers
+          category = 'correct';
+        }
+        
+        // Adjust for time spent (reasonable time indicates thoughtfulness)
+        if (timeSpent > 30 && timeSpent < 300) {
+          questionScore += 10;
+        } else if (timeSpent >= 300) {
+          questionScore += 5;
+        }
+        
+        // Check for code-like patterns in technical questions
+        if (question.type.includes('technical') || question.type.includes('coding')) {
+          if (userAnswer.answer.includes('function') || userAnswer.answer.includes('class') || 
+              userAnswer.answer.includes('const') || userAnswer.answer.includes('let') ||
+              userAnswer.answer.includes('if') || userAnswer.answer.includes('for')) {
+            questionScore += 15;
+          }
+        }
+        
+        // Cap at 100 and adjust category based on final score
+        questionScore = Math.min(questionScore, 100);
+        
+        // Refine category based on final score
+        if (questionScore >= 80) category = 'correct';
+        else if (questionScore >= 50) category = 'partially-correct';
+        else category = 'incorrect';
+      } else {
+        // Ensure unanswered category is set correctly
+        category = 'unanswered';
+        questionScore = 0;
+      }
+      
+      questionResults.push({ question, userAnswer, score: questionScore, category });
+      totalScore += questionScore;
+      
+      // Add to category and type scores
+      if (categoryScores[question.category] !== undefined) {
+        categoryScores[question.category] += questionScore;
+      }
+      if (typeScores[question.type] !== undefined) {
+        typeScores[question.type] += questionScore;
+      }
     });
+    
+    const averageScore = Math.round(totalScore / totalQuestions);
+    
+    // Average the category and type scores
+    Object.keys(categoryScores).forEach(key => {
+      const questionsInCategory = questions.filter(q => q.category === key).length;
+      categoryScores[key] = questionsInCategory > 0 ? Math.round(categoryScores[key] / questionsInCategory) : 0;
+    });
+    
+    Object.keys(typeScores).forEach(key => {
+      const questionsOfType = questions.filter(q => q.type === key).length;
+      typeScores[key] = questionsOfType > 0 ? Math.round(typeScores[key] / questionsOfType) : 0;
+    });
+    
+    // Categorize results
+    const correctAnswers = questionResults.filter(r => r.category === 'correct');
+    const incorrectAnswers = questionResults.filter(r => r.category === 'incorrect');
+    const partiallyCorrectAnswers = questionResults.filter(r => r.category === 'partially-correct');
+    const unansweredQuestions = questionResults.filter(r => r.category === 'unanswered');
     
     const mockEvaluation = {
-      score,
+      score: averageScore,
       totalQuestions,
-      assessedProficiency: score >= 85 ? 'expert' : score >= 70 ? 'advanced' : score >= 55 ? 'intermediate' : 'beginner',
+      assessedProficiency: averageScore >= 85 ? 'expert' : averageScore >= 70 ? 'advanced' : averageScore >= 55 ? 'intermediate' : 'beginner',
       categoryScores,
       typeScores,
-      feedback: `You demonstrated ${score >= 80 ? 'excellent' : score >= 60 ? 'good' : 'adequate'} understanding of the topics covered. Your answers showed ${score >= 75 ? 'strong' : 'developing'} technical knowledge across different question types.`,
+      feedback: `Based on your responses, you scored ${averageScore}%. You answered ${answeredQuestions.length} out of ${totalQuestions} questions. ${averageScore >= 70 ? 'Your answers showed good understanding of the topics.' : averageScore >= 40 ? 'Your answers showed basic understanding but could be more comprehensive.' : 'Your answers were quite brief and could benefit from more detailed explanations.'}`,
       recommendations: [
-        'Continue practicing coding problems on platforms like LeetCode',
-        'Review system design principles and scalability concepts',
-        'Study the company culture and recent technical blog posts',
-        'Practice explaining complex technical concepts clearly',
-        'Work on behavioral interview responses using the STAR method'
-      ]
+        answeredQuestions.length < totalQuestions ? 'Try to answer all questions completely' : 'Good job answering all questions',
+        averageScore < 50 ? 'Focus on providing more detailed and comprehensive answers' : 'Continue building on your technical knowledge',
+        'Practice explaining technical concepts with examples',
+        'Review the expected answers to understand what was missing',
+        'Consider the time spent on each question for better pacing'
+      ],
+      questionBreakdown: {
+        correct: correctAnswers,
+        incorrect: incorrectAnswers,
+        partiallyCorrect: partiallyCorrectAnswers,
+        unanswered: unansweredQuestions
+      }
     };
     
-    console.log('✅ Generated mock evaluation:', { score: mockEvaluation.score, proficiency: mockEvaluation.assessedProficiency });
+    console.log('✅ Generated realistic evaluation:', { 
+      score: mockEvaluation.score, 
+      proficiency: mockEvaluation.assessedProficiency,
+      answeredQuestions: answeredQuestions.length,
+      totalQuestions 
+    });
     return mockEvaluation;
   };
 

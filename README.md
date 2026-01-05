@@ -108,6 +108,69 @@ Support for 8 comprehensive question categories:
 - **groq-sdk 0.7.0** for seamless AI integration
 - **Intelligent fallbacks** for offline functionality
 
+## �  Screenshots
+
+### Application Overview
+![Application Dashboard](screenshots/dashboard.png)
+*Main dashboard showing the three available modes: Learn, Mock, and Evaluate*
+
+### Learn Mode
+![Learn Mode Interface](screenshots/learn-mode.png)
+*Learn Mode interface with immediate answer visibility and detailed explanations*
+
+![Learn Mode Question](screenshots/learn-mode-question.png)
+*Sample coding question in Learn Mode with syntax highlighting*
+
+### Mock Mode
+![Mock Mode Setup](screenshots/mock-mode-setup.png)
+*Mock Mode configuration screen with timing and question type selection*
+
+![Mock Mode Question](screenshots/mock-mode-question.png)
+*Timed question interface in Mock Mode with countdown timer*
+
+![Mock Mode Results](screenshots/mock-mode-results.png)
+*Comprehensive results and performance analytics after Mock Mode completion*
+
+### Evaluate Mode (HR Interface)
+![Evaluate Mode Dashboard](screenshots/evaluate-mode.png)
+*HR dashboard for creating and managing candidate assessments*
+
+![Invitation Creation](screenshots/create-invitation.png)
+*Assessment invitation creation form with customizable parameters*
+
+![Candidate Progress](screenshots/candidate-progress.png)
+*Real-time candidate progress monitoring and results tracking*
+
+### Question Types
+![Coding Question](screenshots/question-coding.png)
+*Technical coding challenge with code editor*
+
+![System Design Question](screenshots/question-system-design.png)
+*System design question with architectural diagrams*
+
+![Behavioral Question](screenshots/question-behavioral.png)
+*Behavioral interview question with scenario-based assessment*
+
+### Authentication & Security
+![Login Screen](screenshots/login.png)
+*Secure login interface with form validation*
+
+![Registration](screenshots/registration.png)
+*User registration form with password strength indicators*
+
+### Voice Input Feature
+![Voice Input](screenshots/voice-input.png)
+*Voice-to-text functionality for hands-free answer input*
+
+### Mobile Responsive Design
+![Mobile Dashboard](screenshots/mobile-dashboard.png)
+*Responsive dashboard view on mobile devices*
+
+![Mobile Question](screenshots/mobile-question.png)
+*Mobile-optimized question interface with touch-friendly controls*
+
+---
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -251,8 +314,46 @@ The application supports both local and network deployment:
 - **Network Sharing**: Configure for same-network access
 - **Production Deployment**: Cloud-ready with comprehensive guides
 
+## 🏗️ Architecture
+
+The HR Candidate Evaluation System follows a modern, scalable architecture with clear separation of concerns:
+
+### System Overview
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Client Layer  │    │  Frontend Layer │    │   API Gateway   │
+│                 │    │                 │    │                 │
+│ • Desktop       │───▶│ • React 18.3.1  │───▶│ • Express.js    │
+│ • Mobile        │    │ • TypeScript    │    │ • JWT Auth      │
+│ • Voice Input   │    │ • Tailwind CSS  │    │ • Rate Limiting │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                                                        │
+┌─────────────────┐    ┌─────────────────┐             │
+│ External APIs   │    │ Database Layer  │◀────────────┘
+│                 │    │                 │
+│ • Groq AI API   │    │ • PostgreSQL 18 │
+│ • Fallback      │    │ • DBO Schema    │
+│   System        │    │ • Security & RLS│
+└─────────────────┘    └─────────────────┘
+```
+
+### Key Architectural Features
+- **Layered Architecture**: Clear separation between presentation, business logic, and data layers
+- **Component-Based Design**: Reusable React components with TypeScript
+- **API-First Approach**: RESTful endpoints with comprehensive error handling
+- **Security by Design**: JWT authentication, input validation, and SQL injection prevention
+- **Performance Optimized**: Connection pooling, strategic indexing, and caching
+- **Scalable Infrastructure**: Stateless design ready for horizontal scaling
+
+### Data Flow
+1. **Authentication**: User credentials → JWT validation → Secure session
+2. **Question Generation**: Assessment config → Groq AI → Fallback system → Question delivery
+3. **Assessment**: User answers → Voice input (optional) → AI evaluation → Results analytics
+
 ## 📚 Documentation
 
+- **[Architecture Guide](ARCHITECTURE.md)**: Detailed system architecture and design patterns
+- **[Visual Architecture](docs/architecture-diagram.md)**: Interactive diagrams and data flows
 - **[Deployment Guide](DEPLOYMENT_GUIDE.md)**: Complete setup instructions
 - **[Security Checklist](SECURITY_CHECKLIST.md)**: Security best practices
 - **[F-Secure Setup](f-secure-firewall-setup.md)**: Firewall configuration

@@ -1,173 +1,30 @@
-# 🎯 HR Candidate Evaluation System
+﻿# 🎯 HR Candidate Evaluation System
 
 A comprehensive full-stack web application designed for technical interview preparation and candidate assessment. This system empowers both job seekers and HR professionals with AI-powered interview tools.
 
-## 🌟 Overview
-
-The HR Candidate Evaluation System provides three distinct modes to cater to different needs in the interview process:
-
-- **🎓 Learn Mode**: Interactive practice with immediate feedback
-- **⏱️ Mock Mode**: Realistic interview simulation with timed assessments
-- **📋 Evaluate Mode**: Professional candidate assessment tools for HR teams
-
-## 🚀 Key Features
-
-### 🤖 AI-Powered Intelligence
-- **Smart Question Generation**: Uses Groq's LLaMA model to create diverse, relevant interview questions
-- **Intelligent Evaluation**: AI-powered answer assessment with detailed feedback
-- **Adaptive Content**: Questions tailored to specific roles and skill levels
-- **Fallback Mechanisms**: System continues working even if AI services are unavailable
-
-### 🎯 Multiple Question Types
-Support for 8 comprehensive question categories:
-- **💻 Coding**: Programming challenges and algorithm problems
-- **🧠 Concepts**: Theoretical knowledge and fundamental principles
-- **🏗️ System Design**: Architecture and scalability questions
-- **👥 Behavioral**: Soft skills and situational scenarios
-- **🔧 Technical**: Technology-specific expertise
-- **📊 Case Study**: Real-world problem-solving scenarios
-- **🏛️ Architecture**: Software design patterns and decisions
-- **🐛 Debugging**: Code review and troubleshooting skills
-
-### ⚡ Advanced Capabilities
-- **🎤 Voice Input**: Speech-to-text functionality for natural responses
-- **⏰ Timed Assessments**: Configurable time limits for questions and overall tests
-- **📧 Invitation System**: Secure, unique assessment links for candidates
-- **📱 Responsive Design**: Works seamlessly on desktop, tablet, and mobile
-- **🔒 Secure Authentication**: JWT-based user management with bcrypt encryption
-
-## 🎮 Application Modes
-
-### 🎓 Learn Mode
-**Perfect for interview preparation and skill development**
-
-**Features:**
-- Immediate answer visibility after each question
-- No time pressure - learn at your own pace
-- Detailed explanations and feedback
-- Progress tracking across sessions
-- Unlimited practice attempts
-
-**Ideal for:**
-- Job seekers preparing for interviews
-- Students learning new technologies
-- Professionals upskilling in their field
-- Anyone wanting to practice without pressure
-
-### ⏱️ Mock Mode
-**Realistic interview simulation for assessment readiness**
-
-**Features:**
-- Timed questions with realistic constraints
-- No answer visibility until completion
-- Complete assessment simulation
-- Performance analytics and scoring
-- Stress-testing under time pressure
-
-**Ideal for:**
-- Final interview preparation
-- Assessing readiness for real interviews
-- Building confidence under time constraints
-- Practicing time management skills
-
-### 📋 Evaluate Mode
-**Professional assessment tools for HR teams**
-
-**Features:**
-- Create custom assessment invitations
-- Configure question types and difficulty
-- Set time limits and assessment parameters
-- Track candidate progress and results
-- Generate comprehensive evaluation reports
-- Secure candidate data management
-
-**Ideal for:**
-- HR professionals conducting interviews
-- Technical recruiters screening candidates
-- Companies standardizing their interview process
-- Remote interview assessments
-
-## 🛠️ Technology Stack
-
-### Frontend
-- **React 18.3.1** with TypeScript for type-safe development
-- **Vite** for fast build tooling and hot reload
-- **Tailwind CSS** for responsive, utility-first styling
-- **Framer Motion** for smooth animations and transitions
-- **Lucide React** for consistent iconography
-
-### Backend
-- **Node.js** with Express 4.18.2 for robust API development
-- **PostgreSQL 8.11.3** for reliable data persistence
-- **bcrypt** for secure password hashing
-- **JWT** for stateless authentication
-- **CORS** enabled for cross-origin requests
-
-### AI/ML Integration
-- **Groq API** with LLaMA-4-Scout model
-- **groq-sdk 0.7.0** for seamless AI integration
-- **Intelligent fallbacks** for offline functionality
-
-## �  Screenshots
+##  Screenshots
 
 ### Application Overview
 ![Application Dashboard](screenshots/dashboard.png)
 *Main dashboard showing the three available modes: Learn, Mock, and Evaluate*
 
-### Learn Mode
-![Learn Mode Interface](screenshots/learn-mode.png)
-*Learn Mode interface with immediate answer visibility and detailed explanations*
-
-![Learn Mode Question](screenshots/learn-mode-question.png)
-*Sample coding question in Learn Mode with syntax highlighting*
-
-### Mock Mode
-![Mock Mode Setup](screenshots/mock-mode-setup.png)
-*Mock Mode configuration screen with timing and question type selection*
-
-![Mock Mode Question](screenshots/mock-mode-question.png)
-*Timed question interface in Mock Mode with countdown timer*
-
-![Mock Mode Results](screenshots/mock-mode-results.png)
-*Comprehensive results and performance analytics after Mock Mode completion*
-
-### Evaluate Mode (HR Interface)
-![Evaluate Mode Dashboard](screenshots/evaluate-mode.png)
-*HR dashboard for creating and managing candidate assessments*
-
-![Invitation Creation](screenshots/create-invitation.png)
-*Assessment invitation creation form with customizable parameters*
-
-![Candidate Progress](screenshots/candidate-progress.png)
-*Real-time candidate progress monitoring and results tracking*
-
-### Question Types
-![Coding Question](screenshots/question-coding.png)
-*Technical coding challenge with code editor*
-
-![System Design Question](screenshots/question-system-design.png)
-*System design question with architectural diagrams*
-
-![Behavioral Question](screenshots/question-behavioral.png)
-*Behavioral interview question with scenario-based assessment*
-
-### Authentication & Security
+### Authentication
 ![Login Screen](screenshots/login.png)
 *Secure login interface with form validation*
 
 ![Registration](screenshots/registration.png)
 *User registration form with password strength indicators*
 
-### Voice Input Feature
-![Voice Input](screenshots/voice-input.png)
-*Voice-to-text functionality for hands-free answer input*
+### Learn Mode
+![Learn Mode - Question Interface](screenshots/learn-mode-1.png)
+*Learn Mode interface with immediate answer visibility and detailed explanations*
 
-### Mobile Responsive Design
-![Mobile Dashboard](screenshots/mobile-dashboard.png)
-*Responsive dashboard view on mobile devices*
+![Learn Mode - Answer Review](screenshots/learn-mode-2.png)
+*Sample question in Learn Mode with answer feedback and explanations*
 
-![Mobile Question](screenshots/mobile-question.png)
-*Mobile-optimized question interface with touch-friendly controls*
+### Mock Mode
+![Mock Mode Interface](screenshots/mock-mode.png)
+*Mock Mode with timed questions and realistic interview simulation*
 
 ---
 

@@ -248,6 +248,9 @@ yarn.lock
 
 # dotenv environment variables file
 .env.test
+.env
+.env.development
+.env.production.template
 
 # Stores VSCode versions used for testing VSCode extensions
 .vscode-test/
